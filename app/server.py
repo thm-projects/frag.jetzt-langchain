@@ -1,12 +1,10 @@
-from fastapi import FastAPI, status, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from langserve import add_routes
-from langchain_openai import ChatOpenAI
-from langchain_core.runnables import ConfigurableField
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from app.security.oauth2 import DEPENDENCIES, per_req_config_modifier
-from app.routes.utils import select_model
+from app.routes.keywords import chain as keyword_chain
 
 app = FastAPI()
 
@@ -29,26 +27,11 @@ async def redirect_root_to_docs():
     return RedirectResponse("/docs")
 
 
-def test(input, config):
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST, detail="You can not do this"
-    )
-
-
 # Edit this to add the chain you want to add
 add_routes(
     app,
-    ChatOpenAI(
-        api_key="sk-proj-92ZvpKzkPqIWGCESK2mdT3BlbkFJN5yuKcxxZaYaklYFAfwJ",
-        model="gpt-4",
-    ).configurable_fields(
-        temperature=ConfigurableField(
-            id="api_key",
-            name="api_key",
-            description="API Key for OpenAI",
-        ),
-    ),
-    path="/chat",
+    keyword_chain,
+    path="/keyword",
     config_keys=["configurable"],
     enabled_endpoints=[
         "invoke",

@@ -29,7 +29,8 @@ async def verify_token(
         or path.endswith("/input_schema")
         or path.endswith("/output_schema")
     ):
-        request.state.payload = None
+        request.state.user_id = None
+        request.state.user_type = None
         return
     exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -49,9 +50,15 @@ async def verify_token(
 
 async def per_req_config_modifier(config: Dict, request: Request) -> Dict:
     """Modify the config for each request."""
-    config["user_info"] = {}
-    config["user_info"]["id"] = request.state.user_id
-    config["user_info"]["type"] = request.state.user_type
+    config["configurable"]["user_info"] = {
+        "id": request.state.user_id,
+        "type": request.state.user_type,
+    }
+    config["configurable"]["provider"] = "openai"
+    config["configurable"]["api_obj"] = {
+        "api_key": "sk-proj-92ZvpKzkPqIWGCESK2mdT3BlbkFJN5yuKcxxZaYaklYFAfwJ",
+        "model": "gpt-4o-mini",
+    }
     return config
 
 

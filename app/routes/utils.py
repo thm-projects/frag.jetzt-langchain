@@ -16,11 +16,11 @@ from langchain_upstage import ChatUpstage
 DEFAULT_VALUES = {}
 MANDATORY_FIELDS = {}
 
-# TODO: Aleph alpha
-# could be added: Databricks, VertexAI,
+# could be added: Databricks, VertexAI, Aleph alpha (langchain provides only llms, could use ChatOpenAi with base_url="https://api.aleph-alpha.com/")
 # StabilityAI? : Replicate
 # Snowflake? : https://python.langchain.com/docs/integrations/chat/snowflake/
 # IBM WatsonX? : https://python.langchain.com/docs/integrations/chat/ibm_watsonx/
+
 
 def _build_defaults():
     # anthropic
@@ -169,6 +169,8 @@ def _build_defaults():
         "model_kwargs": {"type": "dict|null", "default": m.model_kwargs},
         "endpoint_url": {"type": "str|null", "default": m.endpoint_url},
         "provider": {"type": "str|null", "default": m.provider},
+        "temperature": {"type": "float|null", "default": m.temperature},
+        "max_tokens": {"type": "int|null", "default": m.max_tokens},
     }
     # bedrock-converse
     # Either use (aws_access_key_id, aws_secret_access_key) or
@@ -221,6 +223,7 @@ def _build_defaults():
         ]
     ]
     DEFAULT_VALUES["huggingface"] = {
+        "task": {"type": "str|null", "default": m.task},
         "temperature": {"type": "float|null", "default": m.temperature},
         "top_k": {"type": "int|null", "default": m.top_k},
         "top_p": {"type": "float|null", "default": m.top_p},
@@ -276,140 +279,304 @@ def _build_defaults():
 
 _build_defaults()
 
-print(DEFAULT_VALUES)
+
+def get_mandatory(provider, key, api_obj):
+    if key not in api_obj:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{key} is a mandatory field for {provider}",
+        )
+    return api_obj[key]
+
+
+DUMMY = {}
+
+
+def get_optional(key, api_obj, default_obj, override_value=DUMMY):
+    if key in api_obj:
+        return api_obj[key]
+    if override_value is not DUMMY:
+        return override_value
+    return default_obj[key]["default"]
 
 
 # TODO: Rate limiter & Timeout? / Retry? & Max Tokens?
 # https://python.langchain.com/docs/integrations/chat/
-def select_model(input, config):
+def select_model(_, config):
+    config = config["configurable"]
+    # max_tokens = -1 or None for later setting during calculation
     api_obj = config.get("api_obj") or {}
-    api_key = api_obj["api_key"]
-    model = api_obj["model"]
-    temperature = api_obj.get("temperature")
-    top_k = api_obj.get("top_k")
-    top_p = api_obj.get("top_p")
     match config["provider"]:
         case "anthropic":
             # https://python.langchain.com/docs/integrations/chat/anthropic/
+            default_obj = DEFAULT_VALUES["anthropic"]
             return ChatAnthropic(
-                api_key=api_key,
-                model=model,
+                api_key=get_mandatory("anthropic", "api_key", api_obj),
+                model=get_mandatory("anthropic", "model", api_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                top_k=get_optional("top_k", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, -1),
                 max_retries=0,
-                temperature=temperature,
-                top_k=top_k,
-                top_p=top_p,
             )
         case "mistral":
             # https://python.langchain.com/docs/integrations/chat/mistralai/
+            default_obj = DEFAULT_VALUES["mistral"]
             return ChatMistralAI(
-                api_key=api_key,
-                model=model,
+                api_key=get_mandatory("mistral", "api_key", api_obj),
+                model=get_optional("model", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
                 max_retries=0,
-                temperature=temperature,
-                top_p=top_p,
             )
         case "fireworks":
             # https://python.langchain.com/docs/integrations/chat/fireworks/
+            default_obj = DEFAULT_VALUES["fireworks"]
             return ChatFireworks(
-                api_key=api_key,
-                model=model,
+                api_key=get_mandatory("fireworks", "api_key", api_obj),
+                model=get_mandatory("fireworks", "model", api_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
                 max_retries=0,
-                temperature=temperature,
             )
         case "azure":
             # https://python.langchain.com/docs/integrations/chat/azure_chat_openai/
+            default_obj = DEFAULT_VALUES["azure"]
+            if "azure_ad_token" in api_obj:
+                return AzureChatOpenAI(
+                    azure_endpoint=get_mandatory("azure", "azure_endpoint", api_obj),
+                    api_version=get_mandatory("azure", "api_version", api_obj),
+                    azure_ad_token=get_mandatory("azure", "azure_ad_token", api_obj),
+                    azure_deployment=get_optional(
+                        "deployment_name", api_obj, default_obj
+                    ),
+                    model_version=get_optional("model_version", api_obj, default_obj),
+                    model_name=get_optional("model_name", api_obj, default_obj),
+                    temperature=get_optional("temperature", api_obj, default_obj),
+                    openai_organization=get_optional(
+                        "openai_organization", api_obj, default_obj
+                    ),
+                    max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
+                    max_retries=0,
+                )
             return AzureChatOpenAI(
-                azure_endpoint="",
-                api_key=api_key,  # or ad_token
-                model=model,
-                model_version=None,
+                azure_endpoint=get_mandatory("azure", "azure_endpoint", api_obj),
+                api_version=get_mandatory("azure", "api_version", api_obj),
+                api_key=get_mandatory("azure", "api_key", api_obj),
+                azure_deployment=get_optional("deployment_name", api_obj, default_obj),
+                model_version=get_optional("model_version", api_obj, default_obj),
+                model_name=get_optional("model_name", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                openai_organization=get_optional(
+                    "openai_organization", api_obj, default_obj
+                ),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
                 max_retries=0,
-                temperature=temperature,
             )
         case "openai":
             # https://python.langchain.com/docs/integrations/chat/openai/
+            default_obj = DEFAULT_VALUES["openai"]
             return ChatOpenAI(
-                api_key=api_key,
-                model=model,
+                api_key=get_mandatory("openai", "api_key", api_obj),
+                model=get_optional("model", api_obj, default_obj),
+                openai_organization=get_optional(
+                    "openai_organization", api_obj, default_obj
+                ),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                frequency_penalty=get_optional(
+                    "frequency_penalty", api_obj, default_obj
+                ),
+                presence_penalty=get_optional("presence_penalty", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
                 max_retries=0,
-                temperature=temperature,
             )
         case "together":
             # https://python.langchain.com/docs/integrations/chat/together/
+            default_obj = DEFAULT_VALUES["together"]
             return ChatTogether(
-                model="meta-llama/Llama-3-70b-chat-hf",
-                temperature=0,
-                max_tokens=None,
-                timeout=None,
-                max_retries=2,
-                # other params...
+                api_key=get_mandatory("together", "api_key", api_obj),
+                model=get_optional("model", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                frequency_penalty=get_optional(
+                    "frequency_penalty", api_obj, default_obj
+                ),
+                presence_penalty=get_optional("presence_penalty", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
+                timeout=None,  # TODO: Needed?
+                max_retries=0,
             )
         # case "vertex": # NOT ALLOWED
         # https://python.langchain.com/docs/integrations/chat/google_vertex_ai_palm/
         case "google-genai":
             # https://python.langchain.com/docs/integrations/chat/google_generative_ai/
+            default_obj = DEFAULT_VALUES["google-genai"]
             return ChatGoogleGenerativeAI(
-                model="gemini-1.5-pro",
-                temperature=0,
-                max_tokens=None,
-                timeout=None,
-                max_retries=2,
-                # other params...
+                api_key=get_mandatory("google-genai", "api_key", api_obj),
+                model=get_mandatory("google-genai", "model", api_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                top_k=get_optional("top_k", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
+                timeout=None,  # TODO: Needed?
+                max_retries=0,
             )
         case "groq":
             # https://python.langchain.com/docs/integrations/chat/groq/
+            default_obj = DEFAULT_VALUES["groq"]
             return ChatGroq(
-                model="mixtral-8x7b-32768",
-                temperature=0,
-                max_tokens=None,
-                timeout=None,
-                max_retries=2,
-                # other params...
+                api_key=get_mandatory("groq", "api_key", api_obj),
+                model=get_optional("model", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
+                timeout=None,  # TODO: Needed?
+                max_retries=0,
             )
         case "cohere":
-            return ChatCohere()
+            # https://python.langchain.com/docs/integrations/chat/cohere/
+            default_obj = DEFAULT_VALUES["cohere"]
+            return ChatCohere(
+                cohere_api_key=get_mandatory("cohere", "cohere_api_key", api_obj),
+                model=get_optional("model", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+            )
         case "bedrock":
+            # https://python.langchain.com/docs/integrations/chat/bedrock/
+            default_obj = DEFAULT_VALUES["bedrock"]
             return ChatBedrock(
-                model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-                model_kwargs=dict(temperature=0),
-                # other params...
+                model_id=get_mandatory("bedrock", "model_id", api_obj),
+                region_name=get_mandatory("bedrock", "region_name", api_obj),
+                aws_access_key_id=get_mandatory(
+                    "bedrock", "aws_access_key_id", api_obj
+                ),
+                aws_secret_access_key=get_mandatory(
+                    "bedrock", "aws_secret_access_key", api_obj
+                ),
+                aws_session_token=api_obj.get("aws_session_token"),  # Can be None
+                endpoint_url=get_optional("endpoint_url", api_obj, default_obj),
+                provider=get_optional("provider", api_obj, default_obj),
+                model_kwargs=get_optional("model_kwargs", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
             )
         case "bedrock-converse":
+            # https://python.langchain.com/docs/integrations/chat/bedrock/#bedrock-converse-api
+            default_obj = DEFAULT_VALUES["bedrock-converse"]
             return ChatBedrockConverse(
-                model="anthropic.claude-3-sonnet-20240229-v1:0",
-                temperature=0,
-                max_tokens=None,
-                # other params...
+                model_id=get_mandatory("bedrock", "model_id", api_obj),
+                region_name=get_mandatory("bedrock", "region_name", api_obj),
+                aws_access_key_id=get_mandatory(
+                    "bedrock", "aws_access_key_id", api_obj
+                ),
+                aws_secret_access_key=get_mandatory(
+                    "bedrock", "aws_secret_access_key", api_obj
+                ),
+                aws_session_token=api_obj.get("aws_session_token"),  # Can be None
+                endpoint_url=get_optional("endpoint_url", api_obj, default_obj),
+                provider=get_optional("provider", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
             )
         case "huggingface":
-            llm = HuggingFaceEndpoint(
-                repo_id="HuggingFaceH4/zephyr-7b-beta",
-                task="text-generation",
-                max_new_tokens=512,
-                do_sample=False,
-                repetition_penalty=1.03,
-            )
+            # https://python.langchain.com/docs/integrations/chat/huggingface/
+            default_obj = DEFAULT_VALUES["huggingface"]
+            llm: HuggingFaceEndpoint = None
+            if "repo_id" in api_obj:
+                llm = HuggingFaceEndpoint(
+                    repo_id=get_mandatory("huggingface", "repo_id", api_obj),
+                    huggingfacehub_api_token=api_obj.get(
+                        "huggingfacehub_api_token"
+                    ),  # can be None
+                    task=get_optional("task", api_obj, default_obj, "text-generation"),
+                    temperature=get_optional("temperature", api_obj, default_obj),
+                    top_k=get_optional("top_k", api_obj, default_obj),
+                    top_p=get_optional("top_p", api_obj, default_obj),
+                    typical_p=get_optional("typical_p", api_obj, default_obj),
+                    repetition_penalty=get_optional(
+                        "repetition_penalty", api_obj, default_obj
+                    ),
+                    model_kwargs=get_optional("model_kwargs", api_obj, default_obj),
+                    max_new_tokens=get_optional("max_tokens", api_obj, default_obj, -1),
+                )
+            elif "model" in api_obj:
+                llm = HuggingFaceEndpoint(
+                    model=get_mandatory("huggingface", "model", api_obj),
+                    huggingfacehub_api_token=api_obj.get(
+                        "huggingfacehub_api_token"
+                    ),  # can be None
+                    task=get_optional("task", api_obj, default_obj, "text-generation"),
+                    temperature=get_optional("temperature", api_obj, default_obj),
+                    top_k=get_optional("top_k", api_obj, default_obj),
+                    top_p=get_optional("top_p", api_obj, default_obj),
+                    typical_p=get_optional("typical_p", api_obj, default_obj),
+                    repetition_penalty=get_optional(
+                        "repetition_penalty", api_obj, default_obj
+                    ),
+                    model_kwargs=get_optional("model_kwargs", api_obj, default_obj),
+                    max_new_tokens=get_optional("max_tokens", api_obj, default_obj, -1),
+                )
+            else:
+                llm = HuggingFaceEndpoint(
+                    endpoint_url=get_mandatory("huggingface", "endpoint_url", api_obj),
+                    huggingfacehub_api_token=api_obj.get(
+                        "huggingfacehub_api_token"
+                    ),  # can be None
+                    task=get_optional("task", api_obj, default_obj, "text-generation"),
+                    temperature=get_optional("temperature", api_obj, default_obj),
+                    top_k=get_optional("top_k", api_obj, default_obj),
+                    top_p=get_optional("top_p", api_obj, default_obj),
+                    typical_p=get_optional("typical_p", api_obj, default_obj),
+                    repetition_penalty=get_optional(
+                        "repetition_penalty", api_obj, default_obj
+                    ),
+                    model_kwargs=get_optional("model_kwargs", api_obj, default_obj),
+                    max_new_tokens=get_optional("max_tokens", api_obj, default_obj, -1),
+                )
             return ChatHuggingFace(llm=llm)
         case "nvidia":
+            # https://python.langchain.com/docs/integrations/chat/nvidia_ai_endpoints/
+            default_obj = DEFAULT_VALUES["nvidia"]
+            has_key = "nvidia_api_key" in api_obj
+            has_url = "base_url" in api_obj
+            if not has_key and not has_url:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Either nvidia_api_key or base_url is a mandatory field for nvidia",
+                )
             return ChatNVIDIA(
-                model="meta/llama3-8b-instruct",
+                nvidia_api_key=api_obj.get("nvidia_api_key"),  # Can be None
+                base_url=api_obj.get("base_url"),  # Can be None
+                model=get_optional("model", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
             )
         case "ai21":
+            # https://python.langchain.com/docs/integrations/chat/ai21/
+            default_obj = DEFAULT_VALUES["ai21"]
             return ChatAI21(
-                api_key=api_key,
-                model=model,
-                temperature=temperature,
-                top_p=top_p,
+                api_key=get_mandatory("ai21", "api_key", api_obj),
+                model=get_mandatory("ai21", "model", api_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
             )
         case "upstage":
+            # https://python.langchain.com/docs/integrations/chat/upstage/
+            default_obj = DEFAULT_VALUES["upstage"]
             return ChatUpstage(
-                api_key=api_key,
-                model=model,
-                temperature=temperature,
-                top_p=top_p,
+                api_key=get_mandatory("upstage", "api_key", api_obj),
+                model=get_optional("model", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, -1),
             )
         case _:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Something went wrong during provider selection",
+                detail="Something went wrong during provider selection.\nInvalid provider: "
+                + config["provider"],
             )
