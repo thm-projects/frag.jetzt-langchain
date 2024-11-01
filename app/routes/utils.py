@@ -4,6 +4,8 @@ from langchain_anthropic import ChatAnthropic
 from langchain_cohere import ChatCohere
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+from langchain_ibm import ChatWatsonx
+from ibm_watsonx_ai.foundation_models.schema import TextChatParameters
 from langchain_mistralai import ChatMistralAI
 from langchain_fireworks import ChatFireworks
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
@@ -12,14 +14,13 @@ from langchain_together import ChatTogether
 from langchain_groq import ChatGroq
 from langchain_aws import ChatBedrock, ChatBedrockConverse
 from langchain_upstage import ChatUpstage
+from langchain_community.chat_models import ChatSnowflakeCortex
 
 DEFAULT_VALUES = {}
 MANDATORY_FIELDS = {}
 
 # could be added: Databricks, VertexAI, Aleph alpha (langchain provides only llms, could use ChatOpenAi with base_url="https://api.aleph-alpha.com/")
 # StabilityAI? : Replicate
-# Snowflake? : https://python.langchain.com/docs/integrations/chat/snowflake/
-# IBM WatsonX? : https://python.langchain.com/docs/integrations/chat/ibm_watsonx/
 
 
 def _build_defaults():
@@ -274,6 +275,85 @@ def _build_defaults():
         "temperature": {"type": "float", "default": m.temperature},
         "top_p": {"type": "float", "default": m.top_p},
         "max_tokens": {"type": "int", "default": m.max_tokens},
+    }
+    # watsonx
+    # m = ChatWatsonx(
+    #    url="https://us-south.ml.cloud.ibm.com",
+    #    password="a",
+    #    username="a",
+    #    model_id="a",
+    #    instance_id="123",
+    # )
+    MANDATORY_FIELDS["watsonx"] = [
+        {"name": "url", "type": "str"},
+        [
+            {"name": "apikey", "type": "str"},
+            # cloud.ibm.com in url -> only apikey, else others
+            [
+                {"name": "token", "type": "str"},
+                {"name": "instance_id", "type": "str"},
+            ],
+            [
+                {"name": "password", "type": "str"},
+                {"name": "username", "type": "str"},
+                {"name": "instance_id", "type": "str"},
+            ],
+            [
+                {"name": "apikey", "type": "str"},
+                {"name": "username", "type": "str"},
+                {"name": "instance_id", "type": "str"},
+            ],
+        ],
+        [
+            {"name": "model_id", "type": "str"},
+            {"name": "deployment_id", "type": "str"},
+        ],
+        [
+            {"name": "project_id", "type": "str"},
+            {"name": "space_id", "type": "str"},
+        ],
+    ]
+    DEFAULT_VALUES["watsonx"] = {
+        "version": {"type": "str|null", "default": None},
+        "params": {
+            "type": [
+                {
+                    "frequency_penalty": {"type": "float|null", "default": None},
+                    "presence_penalty": {"type": "float|null", "default": None},
+                    "temperature": {"type": "float|null", "default": None},
+                    "top_p": {"type": "float|null", "default": None},
+                    "max_tokens": {"type": "int|null", "default": None},
+                },
+                "null",
+            ],
+            "default": None,
+        },
+    }
+    # snowflake
+    # m = ChatSnowflakeCortex(
+    #    snowflake_account="a",
+    #    snowflake_username="a",
+    #    snowflake_password="a",
+    #    snowflake_database="a",
+    #    snowflake_schema="a",
+    #    snowflake_role="a",
+    #    snowflake_warehouse="a",
+    # )
+    MANDATORY_FIELDS["snowflake"] = [
+        {"name": "account", "type": "str"},
+        {"name": "username", "type": "str"},
+        {"name": "password", "type": "str"},
+        {"name": "database", "type": "str"},
+        {"name": "schema", "type": "str"},
+        {"name": "role", "type": "str"},
+        {"name": "warehouse", "type": "str"},
+    ]
+    DEFAULT_VALUES["snowflake"] = {
+        "model": {"type": "str", "default": "snowflake-arctic"},
+        "cortex_function": {"type": "str", "default": "complete"},
+        "temperature": {"type": "float", "default": 0.7},
+        "top_p": {"type": "float|null", "default": None},
+        "max_tokens": {"type": "int|null", "default": None},
     }
 
 
@@ -573,6 +653,106 @@ def select_model(_, config):
                 temperature=get_optional("temperature", api_obj, default_obj),
                 top_p=get_optional("top_p", api_obj, default_obj),
                 max_tokens=get_optional("max_tokens", api_obj, default_obj, -1),
+            )
+        case "watsonx":
+            # https://python.langchain.com/docs/integrations/chat/ibm_watsonx/
+            default_obj = DEFAULT_VALUES["watsonx"]
+            default_params = default_obj["params"]["type"][0]
+            param_obj = get_optional("params", api_obj, default_obj) or {}
+            if "model_id" not in api_obj and "deployment_id" not in api_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Either model_id or deployment_id is a mandatory field for watsonx",
+                )
+            if "project_id" not in api_obj and "space_id" not in api_obj:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Either project_id or space_id is a mandatory field for watsonx",
+                )
+            params = (
+                TextChatParameters(
+                    frequency_penalty=get_optional(
+                        "frequency_penalty", param_obj, default_params
+                    ),
+                    presence_penalty=get_optional(
+                        "presence_penalty", param_obj, default_params
+                    ),
+                    temperature=get_optional("temperature", param_obj, default_params),
+                    top_p=get_optional("top_p", param_obj, default_params),
+                    max_tokens=get_optional(
+                        "max_tokens", param_obj, default_params, None
+                    ),
+                    n=1,
+                    logprobs=False,
+                )
+                if param_obj != {}
+                else None
+            )
+            has_instance_id = "instance_id" in api_obj
+            if has_instance_id and "token" in api_obj:
+                return ChatWatsonx(
+                    url=get_mandatory("watsonx", "url", api_obj),
+                    instance_id=get_mandatory("watsonx", "instance_id", api_obj),
+                    token=get_mandatory("watsonx", "token", api_obj),
+                    model_id=api_obj.get("model_id"),  # Can be None
+                    deployment_id=api_obj.get("deployment_id"),  # Can be None
+                    project_id=api_obj.get("project_id"),  # Can be None
+                    space_id=api_obj.get("space_id"),  # Can be None
+                    version=get_optional("version", api_obj, default_obj),
+                    params=params,
+                )
+            elif has_instance_id and "apikey" in api_obj:
+                return ChatWatsonx(
+                    url=get_mandatory("watsonx", "url", api_obj),
+                    instance_id=get_mandatory("watsonx", "instance_id", api_obj),
+                    apikey=get_mandatory("watsonx", "apikey", api_obj),
+                    username=get_mandatory("watsonx", "username", api_obj),
+                    model_id=api_obj.get("model_id"),  # Can be None
+                    deployment_id=api_obj.get("deployment_id"),  # Can be None
+                    project_id=api_obj.get("project_id"),  # Can be None
+                    space_id=api_obj.get("space_id"),  # Can be None
+                    version=get_optional("version", api_obj, default_obj),
+                    params=params,
+                )
+            elif has_instance_id:
+                return ChatWatsonx(
+                    url=get_mandatory("watsonx", "url", api_obj),
+                    instance_id=get_mandatory("watsonx", "instance_id", api_obj),
+                    password=get_mandatory("watsonx", "password", api_obj),
+                    username=get_mandatory("watsonx", "username", api_obj),
+                    model_id=api_obj.get("model_id"),  # Can be None
+                    deployment_id=api_obj.get("deployment_id"),  # Can be None
+                    project_id=api_obj.get("project_id"),  # Can be None
+                    space_id=api_obj.get("space_id"),  # Can be None
+                    version=get_optional("version", api_obj, default_obj),
+                    params=params,
+                )
+            return ChatWatsonx(
+                url=get_mandatory("watsonx", "url", api_obj),
+                apikey=get_mandatory("watsonx", "apikey", api_obj),
+                model_id=api_obj.get("model_id"),  # Can be None
+                deployment_id=api_obj.get("deployment_id"),  # Can be None
+                project_id=api_obj.get("project_id"),  # Can be None
+                space_id=api_obj.get("space_id"),  # Can be None
+                version=get_optional("version", api_obj, default_obj),
+                params=params,
+            )
+        case "snowflake":
+            # https://python.langchain.com/docs/integrations/chat/snowflake/
+            default_obj = DEFAULT_VALUES["snowflake"]
+            return ChatSnowflakeCortex(
+                snowflake_account=get_mandatory("snowflake", "account", api_obj),
+                snowflake_username=get_mandatory("snowflake", "username", api_obj),
+                snowflake_password=get_mandatory("snowflake", "password", api_obj),
+                snowflake_database=get_mandatory("snowflake", "database", api_obj),
+                snowflake_schema=get_mandatory("snowflake", "schema", api_obj),
+                snowflake_role=get_mandatory("snowflake", "role", api_obj),
+                snowflake_warehouse=get_mandatory("snowflake", "warehouse", api_obj),
+                model=get_optional("model", api_obj, default_obj),
+                cortex_function=get_optional("cortex_function", api_obj, default_obj),
+                temperature=get_optional("temperature", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
+                max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
             )
         case _:
             raise HTTPException(
