@@ -77,3 +77,8 @@ We also expose port 8080 with the `-p 8080:8080` option.
 ```shell
 docker run -e OPENAI_API_KEY=$OPENAI_API_KEY -p 8080:8080 my-langserve-app
 ```
+
+
+# Installation
+
+Install `libmagic` (or `libmagic-dev`).

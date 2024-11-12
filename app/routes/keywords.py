@@ -18,7 +18,7 @@ chat_template = ChatPromptTemplate.from_messages(
 2. **Named Entities**: Proper nouns such as names of people, organizations, locations, dates, and other specific identifiers.
 3. **Special Numbers**: Numerically significant references, such as dates, monetary values, measurements, or percentages.
 
-**Example:** "A fish named Bob attempted to swim in 1 meter of water depth in the year 1991."
+**Example:** "On July 5th, 1991, a fish named Bob attempted to swim in 1 meter of water. Later in the year 1991, Bob successfully swam in the water."
 
 Output each section in the format:
 
@@ -36,11 +36,11 @@ Keywords: fish; swim; water;
 :::
 Named Entities: Bob;
 :::
-Special Numbers: 1 meter; 1991;
+Special Numbers: 1 meter; Year 1991; July 5th, 1991;
 ```
          """,
         ),
-        ("human", "{input}"),
+        ("human", "{text}"),
     ]
 )
 
@@ -50,7 +50,7 @@ class StringTransformer(RunnableSerializable[str, dict[str, list[str]]]):
 
     allow_duplicates: bool
 
-    def invoke(self, input: str) -> dict[str, list[str]]:
+    def invoke(self, input: str, config) -> dict[str, list[str]]:
         """Invoke the transformer."""
         if input.startswith("```"):
             input = input[3:]
@@ -92,7 +92,7 @@ class StringTransformer(RunnableSerializable[str, dict[str, list[str]]]):
         keywords_dict["keywords"] = [
             x for x in keywords if x not in entities and x not in special
         ]
-        keywords_dict["specialNumbers"] = [x for x in special if x not in entities]
+        keywords_dict["entities"] = [x for x in entities if x not in special]
         return keywords_dict
 
 

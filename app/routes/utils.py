@@ -18,6 +18,7 @@ from langchain_community.chat_models import ChatSnowflakeCortex
 
 DEFAULT_VALUES = {}
 MANDATORY_FIELDS = {}
+REST_DATA = {}
 
 # could be added: Databricks, VertexAI, Aleph alpha (langchain provides only llms, could use ChatOpenAi with base_url="https://api.aleph-alpha.com/")
 # StabilityAI? : Replicate
@@ -355,6 +356,16 @@ def _build_defaults():
         "top_p": {"type": "float|null", "default": None},
         "max_tokens": {"type": "int|null", "default": None},
     }
+    # Make rest data
+    mandatory_keys = MANDATORY_FIELDS.keys()
+    default_values_keys = DEFAULT_VALUES.keys()
+    if mandatory_keys != default_values_keys:
+        raise ValueError("Keys mismatch")
+    for key in mandatory_keys:
+        REST_DATA[key] = {
+            "mandatory": MANDATORY_FIELDS[key],
+            "optional": DEFAULT_VALUES[key],
+        }
 
 
 _build_defaults()

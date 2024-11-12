@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-RUN pip install poetry==1.6.1
+RUN apt update && apt install -y libmagic-dev && pip install poetry==1.6.1
 
 RUN poetry config virtualenvs.create false
 
@@ -10,7 +10,7 @@ COPY ./pyproject.toml ./README.md ./poetry.lock* ./
 
 COPY ./package[s] ./packages
 
-RUN poetry install  --no-interaction --no-ansi --no-root
+RUN poetry install --no-interaction --no-ansi --no-root
 
 COPY ./app ./app
 
