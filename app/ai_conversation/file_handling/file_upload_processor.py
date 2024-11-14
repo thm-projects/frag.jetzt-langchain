@@ -46,7 +46,7 @@ async def _add_optimize_job(
         _process_file,
         "date",
         args=[UploadedFileContent.load_from_db(file), async_connection_pool],
-        id=str(file.file_ref),
+        id=str(file["file_ref"]),
     )
 
 
@@ -62,7 +62,7 @@ async def remove_unreferenced_content(async_connection_pool):
             for to_delete in chunked(to_delete_files, 1000):
                 await conn.execute(
                     "DELETE FROM uploaded_file_content WHERE id IN (SELECT unnest($1::uuid[]));",
-                    map(lambda x: x["id"], to_delete),
+                    list(map(lambda x: x["id"], to_delete)),
                 )
 
     # notify vetorstore of deletions

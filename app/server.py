@@ -11,6 +11,7 @@ from app.routes.improve import chain as improve_chain
 from app.routes.utils import REST_DATA
 from app.ai_conversation.file_handling.router import router as file_router
 from app.ai_conversation.ai_conversation import shutdown, init
+from app.ai_conversation.threads.router import router as thread_router
 
 
 @asynccontextmanager
@@ -47,6 +48,7 @@ async def get_providers() -> dict[str, dict[str, Union[dict, list]]]:
 
 
 app.include_router(file_router, prefix="/file")
+app.include_router(thread_router, prefix="/thread")
 
 # Edit this to add the chain you want to add
 add_routes(

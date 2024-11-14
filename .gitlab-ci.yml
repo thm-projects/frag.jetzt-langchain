@@ -1,0 +1,76 @@
+stages:
+  - push
+  - push_manifest
+  - deploy
+
+.manifest:
+  stage: push_manifest
+  only:
+    - staging
+    - master
+  tags:
+    - curl
+  before_script:
+    - PROJECT_URL="https://github.com/estesp/manifest-tool"
+    - VERSION="v1.0.3"
+    - ARTIFACT="manifest-tool-linux-amd64"
+    - URL="$PROJECT_URL/releases/download/$VERSION/$ARTIFACT"
+    - curl -L -o manifest-tool $URL
+    - chmod +x manifest-tool
+    - echo "$MANIFEST" > manifest.yml
+
+.kaniko:
+  stage: push
+  only:
+    - staging
+    - master
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  tags:
+    - kaniko
+  dependencies:
+    - package
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - echo "$DOCKER_REGISTRY_SECRET" > /kaniko/.docker/config.json
+  script:
+    - /kaniko/executor
+      --custom-platform "$PLATFORM"
+      --context         "$CI_PROJECT_DIR"
+      --dockerfile      "$CI_PROJECT_DIR/Dockerfile.kaniko"
+      --build-arg       "TARGETPLATFORM=$PLATFORM"
+      --destination     "$IMAGE"
+
+docker_hub_arm64:
+  variables:
+    DOCKER_REGISTRY_SECRET: "{\"auths\":{\"$DOCKER_REGISTRY_URL\":{\"auth\":\"$DOCKER_REGISTRY_TOKEN\"}}}"
+    PLATFORM: linux/arm64
+    IMAGE: arsnova/fragjetzt-ai-provider:arm64-$CI_COMMIT_REF_SLUG
+  extends: .kaniko
+
+docker_hub_amd4:
+  variables:
+    DOCKER_REGISTRY_SECRET: "{\"auths\":{\"$DOCKER_REGISTRY_URL\":{\"auth\":\"$DOCKER_REGISTRY_TOKEN\"}}}"
+    PLATFORM: linux/amd64
+    IMAGE: arsnova/fragjetzt-ai-provider:amd64-$CI_COMMIT_REF_SLUG
+  extends: .kaniko
+
+docker_hub_manifest:
+  variables:
+    MANIFEST: |
+      image: "arsnova/fragjetzt-ai-provider:$CI_COMMIT_REF_SLUG"
+      manifests:
+        - image: "arsnova/fragjetzt-ai-provider:arm64-$CI_COMMIT_REF_SLUG"
+          platform:
+            architecture: arm64
+            os: linux
+        - image: "arsnova/fragjetzt-ai-provider:amd64-$CI_COMMIT_REF_SLUG"
+          platform:
+            architecture: amd64
+            os: linux
+  extends: .manifest
+  script:
+    - mkdir -p /manifest-tool/.docker
+    - echo "{\"auths\":{\"$DOCKER_REGISTRY_URL\":{\"auth\":\"$DOCKER_REGISTRY_TOKEN\"}}}" > /manifest-tool/.docker/config.json
+    - ./manifest-tool --docker-cfg /manifest-tool/.docker push from-spec manifest.yml

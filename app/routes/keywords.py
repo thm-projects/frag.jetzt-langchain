@@ -38,6 +38,16 @@ Named Entities: Bob;
 :::
 Special Numbers: 1 meter; Year 1991; July 5th, 1991;
 ```
+
+If a section is empty, output an empty string for that section. If there are no keywords, named entities, or special numbers, output an empty string for each section.
+Like so:
+```
+Keywords:
+:::
+Named Entities:
+:::
+Special Numbers:
+```
          """,
         ),
         ("human", "{text}"),
@@ -76,10 +86,10 @@ class StringTransformer(RunnableSerializable[str, dict[str, list[str]]]):
             "keywords": [
                 x.strip() for x in categories[0][9:].split(";") if x.strip() != ""
             ],
-            "namedEntities": [
+            "entities": [
                 x.strip() for x in categories[1][15:].split(";") if x.strip() != ""
             ],
-            "specialNumbers": [
+            "special": [
                 x.strip() for x in categories[2][16:].split(";") if x.strip() != ""
             ],
         }
@@ -87,8 +97,8 @@ class StringTransformer(RunnableSerializable[str, dict[str, list[str]]]):
             return keywords_dict
         # Remove duplicates
         keywords = keywords_dict["keywords"]
-        entities = keywords_dict["namedEntities"]
-        special = keywords_dict["specialNumbers"]
+        entities = keywords_dict["entities"]
+        special = keywords_dict["special"]
         keywords_dict["keywords"] = [
             x for x in keywords if x not in entities and x not in special
         ]

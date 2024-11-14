@@ -2,7 +2,6 @@ import os
 import asyncpg
 import chromadb
 from chromadb.config import Settings
-from chromadb.utils import embedding_functions
 from app.ai_conversation.db import migrate
 from app.ai_conversation.file_handling.vectorstore import set_chroma
 from app.ai_conversation.file_handling.file_upload_processor import (
@@ -13,11 +12,13 @@ from langchain_chroma import Chroma
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from psycopg_pool import AsyncConnectionPool
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langchain_huggingface import HuggingFaceEmbeddings
 
 
 async_connection_pool = None
 postgres_checkpointer = None
 scheduler = None
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def get_connection_pool():
@@ -29,9 +30,11 @@ def get_postgres_checkpointer():
     global postgres_checkpointer
     return postgres_checkpointer
 
+
 def get_scheduler():
     global scheduler
     return scheduler
+
 
 async def init():
     # Setup connection pool
@@ -51,8 +54,6 @@ async def init():
         max_size=10,  # Maximum number of connections
     )
     await migrate(async_connection_pool)
-    await remove_unreferenced_content(async_connection_pool)
-    # sanity check: await sync_with_db(async_connection_pool)
     # setup pg checkpointer
     global postgres_checkpointer
     db_uri = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}?sslmode=disable"
@@ -60,16 +61,18 @@ async def init():
         "autocommit": True,
         "prepare_threshold": 0,
     }
-    async with AsyncConnectionPool(
+    pool = AsyncConnectionPool(
         conninfo=db_uri,
         max_size=10,
         kwargs=connection_kwargs,
-    ) as pool:
-        checkpointer = AsyncPostgresSaver(pool)
-        await checkpointer.setup()
-        postgres_checkpointer = checkpointer
+        open=False,
+    )
+    await pool.open(True)
+    checkpointer = AsyncPostgresSaver(pool)
+    await checkpointer.setup()
+    postgres_checkpointer = checkpointer
     # Setup Chroma
-    client = await chromadb.AsyncHttpClient(
+    client = chromadb.HttpClient(
         host=os.getenv("CHROMA_HOST", "chroma_langchain"),
         port=os.getenv("CHROMA_PORT", "8000"),
         settings=Settings(
@@ -77,9 +80,8 @@ async def init():
             chroma_client_auth_credentials=os.getenv("CHROMA_TOKEN", "test-token"),
         ),
     )
-    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
-    )
+    model = MODEL_NAME  # sentence-transformers/all-mpnet-base-v2
+    sentence_transformer_ef = HuggingFaceEmbeddings(model_name=model)
     chroma = Chroma(
         client=client,
         collection_name="langchain",
@@ -89,7 +91,6 @@ async def init():
     # Scheduler
     global scheduler
     scheduler = AsyncIOScheduler()
-    await optimize_file_content(async_connection_pool, scheduler)
     scheduler.add_job(
         remove_unreferenced_content, "interval", minutes=1, args=[async_connection_pool]
     )
@@ -100,6 +101,10 @@ async def init():
         args=[async_connection_pool, scheduler],
     )
     scheduler.start()
+    # Syncing
+    await optimize_file_content(async_connection_pool, scheduler)
+    await remove_unreferenced_content(async_connection_pool)
+    # sanity check: await sync_with_db(async_connection_pool)
 
 
 async def shutdown():

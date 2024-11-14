@@ -1,6 +1,7 @@
 import os
 from typing import Iterable, Union
-from uuid import UUID
+from uuid import UUID, uuid4
+from langchain_chroma import Chroma
 import magic
 from app.ai_conversation.entities.uploaded_file_content import UploadedFileContent
 from langchain_core.documents import Document
@@ -65,11 +66,17 @@ standard_text_splitter = RecursiveCharacterTextSplitter(
     chunk_overlap=TEXT_CHUNK_OVERLAP,
 )
 
-chroma = None
+chroma: Chroma = None
 
-def set_chroma(chroma_instance):
+
+def set_chroma(chroma_instance: Chroma):
     global chroma
     chroma = chroma_instance
+
+
+def get_chroma():
+    global chroma
+    return chroma
 
 
 def _get_splitter_for_language(
@@ -89,7 +96,7 @@ def _get_splitter_for_language(
 def _add_ref(content: UploadedFileContent, docs: Iterable[Document]) -> None:
     for doc in docs:
         del doc.metadata["source"]
-        doc.metadata["ref_id"] = content.id
+        doc.metadata["ref_id"] = str(content.id)
 
 
 # https://python.langchain.com/docs/integrations/document_loaders/
@@ -301,18 +308,24 @@ async def import_to_vectorstore(content: UploadedFileContent) -> Union[str, bool
             return "Unknown MIME type: " + mime_type
     if docs:
         global chroma
-        await chroma.aadd_documents(docs)
+        for doc in docs:
+            doc.metadata["id"] = str(uuid4())
+        await chroma.aadd_documents(docs, ids=[doc.metadata["id"] for doc in docs])
     return True
 
 
 async def on_content_deleted(ref_ids: list[UUID]):
     if len(ref_ids) < 1:
         return
-    PAGE_SIZE=1000
+    PAGE_SIZE = 1000
     has_remaining_elements = True
     global chroma
     while has_remaining_elements:
-        result = await chroma.get(where={"ref_id": {"$in": ref_ids}}, include=[], limit=PAGE_SIZE)
+        result = chroma.get(
+            where={"ref_id": {"$in": list(map(lambda x: str(x), ref_ids))}},
+            include=[],
+            limit=PAGE_SIZE,
+        )
         ids = result["ids"]
         has_remaining_elements = len(ids) >= PAGE_SIZE
         if len(ids) > 0:

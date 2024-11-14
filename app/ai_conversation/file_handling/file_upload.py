@@ -49,19 +49,27 @@ async def handle_file_upload(files: List[UploadFile], user_id: UUID) -> list[dic
                 print(e)
             currently_processing[file_ref]["vector"] = False
             # then optimize
-            await _add_optimize_job(row, get_scheduler())
+            await _add_optimize_job(row, get_scheduler(), get_connection_pool())
         else:
             remove_files([file_ref])
         file = await _insert_file(row["id"], user_id, file.filename)
         results.append(
             {
                 "result": "OK",
-                "file": file,
+                "file": dict(file),
                 "isNew": is_new,
-                "import_result": import_result,
+                "importResult": import_result,
             }
         )
     return results
+
+async def handle_file_list(user_id: UUID):
+    async with get_connection_pool().acquire() as conn:
+        files = await conn.fetch(
+            "SELECT * FROM uploaded_file WHERE account_id = $1;",
+            user_id,
+        )
+        return [dict(file) for file in files]
 
 
 async def handle_file_delete(file_id: UUID, user_id: UUID):
