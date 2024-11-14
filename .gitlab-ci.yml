@@ -29,8 +29,6 @@ stages:
     entrypoint: [""]
   tags:
     - kaniko
-  dependencies:
-    - package
   before_script:
     - mkdir -p /kaniko/.docker
     - echo "$DOCKER_REGISTRY_SECRET" > /kaniko/.docker/config.json
