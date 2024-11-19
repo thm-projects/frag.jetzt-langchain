@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from typing import Union
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from langserve import add_routes
@@ -8,10 +7,11 @@ import os
 from app.security.oauth2 import DEPENDENCIES, per_req_config_modifier
 from app.routes.keywords import chain as keyword_chain
 from app.routes.improve import chain as improve_chain
-from app.routes.utils import REST_DATA
 from app.ai_conversation.file_handling.router import router as file_router
 from app.ai_conversation.ai_conversation import shutdown, init
 from app.ai_conversation.threads.router import router as thread_router
+from app.ai_conversation.api.router import router as api_router
+from app.ai_conversation.assistants.router import router as assistant_router
 
 
 @asynccontextmanager
@@ -41,14 +41,10 @@ app.add_middleware(
 async def redirect_root_to_docs():
     return RedirectResponse("/docs")
 
-
-@app.get("/provider")
-async def get_providers() -> dict[str, dict[str, Union[dict, list]]]:
-    return REST_DATA
-
-
 app.include_router(file_router, prefix="/file")
 app.include_router(thread_router, prefix="/thread")
+app.include_router(api_router, prefix="/api")
+app.include_router(assistant_router, prefix="")
 
 # Edit this to add the chain you want to add
 add_routes(

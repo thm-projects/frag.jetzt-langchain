@@ -53,7 +53,6 @@ async def init():
         min_size=1,  # Minimum number of connections
         max_size=10,  # Maximum number of connections
     )
-    await migrate(async_connection_pool)
     # setup pg checkpointer
     global postgres_checkpointer
     db_uri = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}?sslmode=disable"
@@ -100,11 +99,12 @@ async def init():
         minutes=1,
         args=[async_connection_pool, scheduler],
     )
-    scheduler.start()
     # Syncing
+    await migrate(async_connection_pool)
     await optimize_file_content(async_connection_pool, scheduler)
     await remove_unreferenced_content(async_connection_pool)
     # sanity check: await sync_with_db(async_connection_pool)
+    scheduler.start()
 
 
 async def shutdown():

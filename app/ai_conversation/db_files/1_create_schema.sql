@@ -80,7 +80,12 @@ CREATE TRIGGER trigger_timestamp_restrictions
     FOR EACH ROW
 EXECUTE PROCEDURE trigger_timestamp_create_update_func();
 
-CREATE TYPE restriction_target AS ENUM ('ALL', 'UNREGISTERED', 'REGISTERED', 'USER', 'UNREGISTERED_MOD', 'REGISTERED_MOD', 'MOD');
+CREATE TYPE restriction_target AS ENUM (
+  'ALL', 'UNREGISTERED', 'REGISTERED',
+  'USER', 'UNREGISTERED_USER', 'REGISTERED_USER',
+  'MOD', 'UNREGISTERED_MOD', 'REGISTERED_MOD', 
+  'CREATOR'
+);
 
 CREATE TABLE block_restriction (
   id uuid NOT NULL DEFAULT uuid_generate_v1(),
@@ -106,8 +111,10 @@ CREATE TABLE quota_restriction (
   quota numeric(32, 16) NOT NULL,
   counter numeric(32, 16) NOT NULL,
   target restriction_target NOT NULL,
-  reset_strategy varchar(64) NOT NULL,
+  reset_strategy varchar(32) NOT NULL,
+  timezone varchar(32) NOT NULL,
   last_reset timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  end_time timestamp NULL,
   created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp NULL,
 
@@ -127,7 +134,8 @@ CREATE TABLE time_restriction (
   start_time timestamp NOT NULL,
   end_time timestamp NOT NULL,
   target restriction_target NOT NULL,
-  repeat_strategy varchar(64) NOT NULL,
+  repeat_strategy varchar(32) NOT NULL,
+  timezone varchar(32) NOT NULL,
   created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp NULL,
 
@@ -151,6 +159,7 @@ CREATE TABLE api_model_info (
   configurable_fields text NOT NULL,
   input_token_cost numeric(32, 16) NOT NULL,
   output_token_cost numeric(32, 16) NOT NULL,
+  max_tokens INT NULL,
   created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp NULL,
 
@@ -280,6 +289,16 @@ CREATE TRIGGER trigger_timestamp_assistant
     ON assistant
     FOR EACH ROW
 EXECUTE PROCEDURE trigger_timestamp_create_update_func();
+
+CREATE TABLE assistant_file (
+  assistant_id uuid NOT NULL,
+  uploaded_file_id uuid NOT NULL,
+  created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (assistant_id, uploaded_file_id),
+  FOREIGN KEY (assistant_id) REFERENCES assistant(id) ON DELETE CASCADE,
+  FOREIGN KEY (uploaded_file_id) REFERENCES uploaded_file(id) ON DELETE CASCADE
+);
 
 -- threads
 

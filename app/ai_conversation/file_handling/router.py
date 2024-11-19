@@ -13,20 +13,22 @@ from app.security.oauth2 import DEPENDENCIES
 
 router = APIRouter()
 
-@router.get("/list", dependencies=DEPENDENCIES)
+
+@router.get("/list", dependencies=DEPENDENCIES, tags=["File"])
 async def list_files(request: Request) -> list[dict]:
     return await handle_file_list(request.state.user_id)
 
-@router.post("/upload", dependencies=DEPENDENCIES)
+
+@router.post("/upload", dependencies=DEPENDENCIES, tags=["File"])
 async def upload(request: Request, files: List[UploadFile] = File(...)) -> list[dict]:
     return await handle_file_upload(files, request.state.user_id)
 
 
-@router.delete("/delete/{file_id}", dependencies=DEPENDENCIES)
+@router.delete("/delete/{file_id}", dependencies=DEPENDENCIES, tags=["File"])
 async def delete(request: Request, file_id: UUID) -> None:
     return await handle_file_delete(file_id, request.state.user_id)
 
 
-@router.get("/content/{file_id}", dependencies=DEPENDENCIES)
+@router.get("/content/{file_id}", dependencies=DEPENDENCIES, tags=["File"])
 async def get_content(request: Request, file_id: UUID) -> FileResponse:
     return await handle_file_get(file_id, request.state.user_id)

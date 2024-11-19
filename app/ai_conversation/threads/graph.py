@@ -2,7 +2,7 @@ from typing import Any, List
 from uuid import UUID
 from fastapi import HTTPException
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
@@ -67,9 +67,9 @@ async def _rag_for_last_message(state: GraphState):
     if input.type != "human":
         raise ValueError("Last message must be human")
     documents = await get_chroma().as_retriever().ainvoke(_message_to_str(input))
-    message = ToolMessage(
-        content="", artifact={"documents": documents}, tool_call_id="rag"
-    )
+    if len(documents) < 1:
+        return {}
+    message = AIMessage(content="", artifact={"documents": documents})
     return {"messages": [message]}
 
 
@@ -122,13 +122,13 @@ class GraphWrapper:
 
     async def list_chats(self, config: RunnableConfig) -> list[Thread]:
         configurable = config["configurable"]
-        room_id = configurable["room_id"]
+        room_id = configurable["room"]["id"]
         user_id = configurable["user_info"]["id"]
         return await list_threads(room_id, user_id)
 
     async def new_chat(self, input: HumanMessage, config: RunnableConfig) -> Any:
         configurable = config["configurable"]
-        room_id = UUID(configurable["room_id"])
+        room_id = configurable["room"]["id"]
         user_id = configurable["user_info"]["id"]
         name = await chat_namer_chain.ainvoke({"messages": [input]}, config)
         thread = await create_thread(
@@ -148,7 +148,7 @@ class GraphWrapper:
         self, input: HumanMessage | None, thread_id: UUID, config: RunnableConfig
     ) -> Any:
         configurable = config["configurable"]
-        room_id = UUID(configurable["room_id"])
+        room_id = configurable["room"]["id"]
         user_id = configurable["user_info"]["id"]
         thread = await get_thread(thread_id, room_id, user_id)
         if not thread:
@@ -193,6 +193,11 @@ class GraphWrapper:
                     "event": "message",
                 }
         yield {"event": "end"}
+
+    def _strip_information(self, message: HumanMessage):
+        return HumanMessage(
+            content=message.content,
+        )
 
 
 graph_wrapper: GraphWrapper = None

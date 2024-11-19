@@ -12,7 +12,7 @@ else
   SECRET_KEY="$(cat $DIR/environments/backend.env | grep SPRING_JWT_SECRET | cut -d '=' -f 2)"
 fi
 ORIGINS="http://localhost:4200"
-sudo docker run --rm -it -e SECRET_KEY="$SECRET_KEY" -e ORIGINS="$ORIGINS" \
+sudo docker run --rm -it -e SECRET_KEY="$SECRET_KEY" -e ORIGINS="$ORIGINS" -e ROOT_PATH="/ai" \
   -p 6001:8080 \
   -v "./app:/code/app" -v "./files:/code/files" \
   --network langchain_network --network fragjetzt \
