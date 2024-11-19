@@ -29,8 +29,6 @@ stages:
     entrypoint: [""]
   tags:
     - kaniko
-  dependencies:
-    - package
   before_script:
     - mkdir -p /kaniko/.docker
     - echo "$DOCKER_REGISTRY_SECRET" > /kaniko/.docker/config.json
@@ -42,7 +40,7 @@ stages:
       --build-arg       "TARGETPLATFORM=$PLATFORM"
       --destination     "$IMAGE"
 
-docker_hub_arm64:
+.docker_hub_arm64:
   variables:
     DOCKER_REGISTRY_SECRET: "{\"auths\":{\"$DOCKER_REGISTRY_URL\":{\"auth\":\"$DOCKER_REGISTRY_TOKEN\"}}}"
     PLATFORM: linux/arm64
@@ -61,10 +59,6 @@ docker_hub_manifest:
     MANIFEST: |
       image: "arsnova/fragjetzt-ai-provider:$CI_COMMIT_REF_SLUG"
       manifests:
-        - image: "arsnova/fragjetzt-ai-provider:arm64-$CI_COMMIT_REF_SLUG"
-          platform:
-            architecture: arm64
-            os: linux
         - image: "arsnova/fragjetzt-ai-provider:amd64-$CI_COMMIT_REF_SLUG"
           platform:
             architecture: amd64
