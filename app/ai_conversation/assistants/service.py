@@ -288,18 +288,16 @@ async def add_room_assistant_files(config: dict, assistant_id: UUID, files: list
         if not data:
             raise ValueError("No assistant found")
         file_list = await conn.fetch(
-            "SELECT id FROM uploaded_file WHERE id IN (SELECT unnest($1::uuid[])) AND account_id = $1;",
+            "SELECT id FROM uploaded_file WHERE id IN (SELECT unnest($1::uuid[])) AND account_id = $2;",
             files,
             account_id,
         )
         if len(file_list) != len(files):
             raise ValueError("Not all files were found")
-        status = await conn.executemany(
+        await conn.executemany(
             "INSERT INTO assistant_file(assistant_id, uploaded_file_id) VALUES ($1, $2);",
-            [(assistant_id, v) for v in file_list],
+            [(assistant_id, v["id"]) for v in file_list],
         )
-        if not status:
-            raise ValueError("Failed to insert values")
         return True
 
 
@@ -435,18 +433,16 @@ async def add_platform_assistant_files(
         if not data:
             raise ValueError("No assistant found")
         file_list = await conn.fetch(
-            "SELECT id FROM uploaded_file WHERE id IN (SELECT unnest($1::uuid[])) AND account_id = $1;",
+            "SELECT id FROM uploaded_file WHERE id IN (SELECT unnest($1::uuid[])) AND account_id = $2;",
             files,
             account_id,
         )
         if len(file_list) != len(files):
             raise ValueError("Not all files were found")
-        status = await conn.executemany(
+        await conn.executemany(
             "INSERT INTO assistant_file(assistant_id, uploaded_file_id) VALUES ($1, $2);",
-            [(assistant_id, v) for v in file_list],
+            [(assistant_id, v["id"]) for v in file_list],
         )
-        if not status:
-            raise ValueError("Failed to insert values")
         return True
 
 
