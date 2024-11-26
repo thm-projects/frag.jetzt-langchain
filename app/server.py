@@ -12,6 +12,8 @@ from app.ai_conversation.ai_conversation import shutdown, init
 from app.ai_conversation.threads.router import router as thread_router
 from app.ai_conversation.api.router import router as api_router
 from app.ai_conversation.assistants.router import router as assistant_router
+from app.ai_conversation.restrictions.router import router as restriction_router
+from app.ai_conversation.room_settings.router import router as room_setting_router
 
 
 @asynccontextmanager
@@ -45,6 +47,8 @@ app.include_router(file_router, prefix="/file")
 app.include_router(thread_router, prefix="/thread")
 app.include_router(api_router, prefix="/api")
 app.include_router(assistant_router, prefix="")
+app.include_router(restriction_router, prefix="/restriction")
+app.include_router(room_setting_router, prefix="/room-setting")
 
 # Edit this to add the chain you want to add
 add_routes(

@@ -115,12 +115,26 @@ def find_next_boundaries(
     return None
 
 
+@dataclass
+class InputRestrictions:
+    account_id: Optional[UUID]
+    room_id: Optional[UUID]
+
+
 @entity
 @dataclass
 class Restrictions:
     id: UUID
+    account_id: UUID
+    room_id: UUID
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass
+class InputBlockRestriction:
+    restriction_id: UUID
+    target: RestrictionTarget
 
 
 @entity
@@ -141,6 +155,20 @@ class QuotaReservation:
     id: UUID
     time: datetime
     reserved: Decimal
+
+
+NULL_RESERVATION = QuotaReservation(None, None, Decimal(0))
+
+
+@dataclass
+class InputQuotaRestriction:
+    restriction_id: UUID
+    quota: Decimal
+    target: RestrictionTarget
+    reset_strategy: str
+    timezone: str
+    last_reset: datetime
+    end_time: Optional[datetime]
 
 
 @entity
@@ -166,6 +194,7 @@ class QuotaRestriction:
 
     def is_user_allowed(self, config: dict) -> dict:
         has_ended = self.end_time and self.end_time <= datetime.now()
+        has_started = self.last_reset <= datetime.now()
         allowed = applies_for_restriction(config, self.target)
         result = find_next_boundaries(
             [self.last_reset], self.timezone, self.reset_strategy
@@ -173,6 +202,7 @@ class QuotaRestriction:
         has_reset = result and result[0][0] > self.last_reset
         return {
             "has_ended": not has_ended,
+            "has_started": has_started,
             "role": {"needed": self.target, "allowed": allowed},
             "quota_is_null": self.quota <= 0,
             "quota_available": self.quota if has_reset else self.quota - self.counter,
@@ -183,10 +213,12 @@ class QuotaRestriction:
     ) -> Optional[QuotaReservation]:
         if self.end_time and self.end_time <= datetime.now():
             return None
+        if self.last_reset > datetime.now():
+            return None
         if not applies_for_restriction(config, self.target):
             return None
         if self.quota <= 0:
-            return None
+            return NULL_RESERVATION
         result = find_next_boundaries(
             [self.last_reset], self.timezone, self.reset_strategy
         )
@@ -194,11 +226,11 @@ class QuotaRestriction:
             self.last_reset = result[0]
             self.counter = 0
         if self.counter + min_amount > self.quota:
-            return None
+            return NULL_RESERVATION
         rest_quota = self.quota - (self.counter + min_amount)
         using = min(rest_quota, max_amount - min_amount) + min_amount
-        if using < 1:
-            return None
+        if using < 1:  # When using = 0, min_amount = 0
+            return NULL_RESERVATION
         self.counter = self.counter + using
         return QuotaReservation(self.id, self.last_reset, using)
 
@@ -210,6 +242,16 @@ class QuotaRestriction:
             return True
         self.counter = self.counter + used - reservation.reserved
         return True
+
+
+@dataclass
+class InputTimeRestriction:
+    restriction_id: UUID
+    start_time: datetime
+    end_time: datetime
+    target: RestrictionTarget
+    repeat_strategy: str
+    timezone: str
 
 
 @entity

@@ -4,8 +4,37 @@ from app.ai_conversation.assistants.models import (
     AssistantFile,
     InputAssistant,
     OutputAssistant,
+    UploadedFile,
+    WrappedAssistant,
 )
 from app.ai_conversation.services.role_checker import AdminRole, Role
+
+
+async def load_transient_fields(
+    conn, assistants: list[OutputAssistant]
+) -> list[WrappedAssistant]:
+    data = await conn.fetch(
+        "SELECT * FROM assistant_file WHERE assistant_id IN (SELECT unnest($1::uuid[]));",
+        [a.id for a in assistants],
+    )
+    files: list[AssistantFile] = [AssistantFile.load_from_db(row) for row in data]
+    data = await conn.fetch(
+        "SELECT * FROM uploaded_file WHERE id IN (SELECT unnest($1::uuid[]));",
+        [f.uploaded_file_id for f in files],
+    )
+    file_refs = [UploadedFile.load_from_db(row) for row in data]
+    file_refs = {x.id: x for x in file_refs}
+    return [
+        {
+            "assistant": a,
+            "files": [
+                (f, file_refs[f.uploaded_file_id])
+                for f in files
+                if f.assistant_id == a.id
+            ],
+        }
+        for a in assistants
+    ]
 
 
 async def create_user_assistant(
@@ -15,7 +44,7 @@ async def create_user_assistant(
     if not account_id:
         raise ValueError("Invalid account id")
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetchrow(
+        data = await conn.fetchrow(
             "INSERT INTO assistant(account_id, name, description, instruction, override_json_settings, model_name, provider_list, share_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;",
             account_id,
             assistant.name,
@@ -32,14 +61,19 @@ async def create_user_assistant(
 async def list_user_assistants(config: dict) -> list[OutputAssistant]:
     account_id = config["configurable"]["user_info"]["id"]
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetch("SELECT * FROM assistant WHERE account_id = $1;", account_id)
-        return [OutputAssistant.load_from_db(row) for row in data]
+        data = await conn.fetch(
+            "SELECT * FROM assistant WHERE account_id = $1;", account_id
+        )
+        assistants: list[OutputAssistant] = [
+            OutputAssistant.load_from_db(row) for row in data
+        ]
+        return await load_transient_fields(conn, assistants)
 
 
 async def delete_user_assistant(config: dict, assistant_id: UUID) -> None:
     account_id = config["configurable"]["user_info"]["id"]
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetchrow(
+        data = await conn.execute(
             "DELETE FROM assistant WHERE account_id = $1 AND id = $2;",
             account_id,
             assistant_id,
@@ -71,15 +105,15 @@ async def patch_user_assistant(
 ) -> OutputAssistant:
     account_id = config["configurable"]["user_info"]["id"]
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetchrow(
+        data = await conn.fetchrow(
             "SELECT * FROM assistant WHERE account_id = $1 AND id = $2;",
             account_id,
             assistant_id,
         )
         if not data:
             raise ValueError("Assistant not found")
-        assistant = patch_assistant(assistant, data)
-        data = conn.fetchrow(
+        assistant = patch_assistant(assistant, dict(data))
+        data = await conn.fetchrow(
             "UPDATE assistant SET name = $1, description = $2, instruction = $3, override_json_settings = $4, model_name = $5, provider_list = $6, share_type = $7 WHERE account_id = $8 AND id = $9 RETURNING *;",
             assistant["name"],
             assistant["description"],
@@ -106,18 +140,17 @@ async def add_user_assistant_files(config: dict, assistant_id: UUID, files: list
         )
         if not data:
             raise ValueError("Assistant not found")
-        file_list = await conn.fetchrow(
-            "SELECT id FROM uploaded_file WHERE id IN (SELECT unnest($1::uuid[])) AND account_id = $1;",
+        file_list = await conn.fetch(
+            "SELECT id FROM uploaded_file WHERE id IN (SELECT unnest($1::uuid[])) AND account_id = $2;",
+            files,
             account_id,
         )
         if len(file_list) != len(files):
             raise ValueError("Not all files were found")
-        status = await conn.executemany(
+        await conn.executemany(
             "INSERT INTO assistant_file(assistant_id, uploaded_file_id) VALUES ($1, $2);",
-            [(assistant_id, v) for v in file_list],
+            [(assistant_id, v["id"]) for v in file_list],
         )
-        if not status:
-            raise ValueError("Failed to insert values")
         return True
 
 
@@ -139,7 +172,9 @@ async def get_user_assistant_files(
         return [AssistantFile.load_from_db(row) for row in data]
 
 
-async def delete_user_assistant_file(config: dict, assistant_id: UUID, file_id: UUID):
+async def delete_user_assistant_file(
+    config: dict, assistant_id: UUID, file_ids: list[UUID]
+):
     account_id = config["configurable"]["user_info"]["id"]
     async with get_connection_pool().acquire() as conn:
         data = await conn.fetchrow(
@@ -150,9 +185,9 @@ async def delete_user_assistant_file(config: dict, assistant_id: UUID, file_id: 
         if not data:
             raise ValueError("Assistant not found")
         data = await conn.execute(
-            "DELETE FROM assistant_file WHERE assistant_id = $1 AND uploaded_file_id = $2;",
+            "DELETE FROM assistant_file WHERE assistant_id = $1 AND uploaded_file_id IN (SELECT unnest($2::uuid[]));",
             assistant_id,
-            file_id,
+            file_ids,
         )
         if not data:
             raise ValueError("File not present")
@@ -166,14 +201,9 @@ async def create_room_assistant(
     if role not in [Role.CREATOR, Role.MODERATOR]:
         raise ValueError("You must be at least Moderator!")
     async with get_connection_pool().acquire() as conn:
-        id = conn.fetchval(
-            "SELECT id FROM room_restriction WHERE room_id = $1;", room_id
-        )
-        if not id:
-            raise ValueError("No restrictions have been made")
-        data = conn.fetchrow(
-            "INSERT INTO assistant(room_restriction_id, name, description, instruction, override_json_settings, model_name, provider_list, share_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;",
-            id,
+        data = await conn.fetchrow(
+            "INSERT INTO assistant(room_id, name, description, instruction, override_json_settings, model_name, provider_list, share_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;",
+            room_id,
             assistant.name,
             assistant.description,
             assistant.instruction,
@@ -188,13 +218,11 @@ async def create_room_assistant(
 async def list_room_assistants(config: dict) -> list[OutputAssistant]:
     room_id = config["configurable"]["room"]["id"]
     async with get_connection_pool().acquire() as conn:
-        id = conn.fetchval(
-            "SELECT id FROM room_restriction WHERE room_id = $1;", room_id
-        )
-        if not id:
-            raise ValueError("No restrictions have been made")
-        data = conn.fetch("SELECT * FROM assistant WHERE room_restriction_id = $1;", id)
-        return [OutputAssistant.load_from_db(row) for row in data]
+        data = await conn.fetch("SELECT * FROM assistant WHERE room_id = $1;", room_id)
+        assistants: list[OutputAssistant] = [
+            OutputAssistant.load_from_db(row) for row in data
+        ]
+        return await load_transient_fields(conn, assistants)
 
 
 async def delete_room_assistant(config: dict, assistant_id: UUID) -> None:
@@ -203,14 +231,9 @@ async def delete_room_assistant(config: dict, assistant_id: UUID) -> None:
     if role not in [Role.CREATOR, Role.MODERATOR]:
         raise ValueError("You must be at least Moderator!")
     async with get_connection_pool().acquire() as conn:
-        id = conn.fetchval(
-            "SELECT id FROM room_restriction WHERE room_id = $1;", room_id
-        )
-        if not id:
-            raise ValueError("No restrictions have been made")
-        data = conn.fetchrow(
-            "DELETE FROM assistant WHERE room_restriction_id = $1 AND id = $2;",
-            id,
+        data = await conn.execute(
+            "DELETE FROM assistant WHERE room_id = $1 AND id = $2;",
+            room_id,
             assistant_id,
         )
         if not data:
@@ -225,21 +248,16 @@ async def patch_room_assistant(
     if role not in [Role.CREATOR, Role.MODERATOR]:
         raise ValueError("You must be at least Moderator!")
     async with get_connection_pool().acquire() as conn:
-        id = conn.fetchval(
-            "SELECT id FROM room_restriction WHERE room_id = $1;", room_id
-        )
-        if not id:
-            raise ValueError("No restrictions have been made")
-        data = conn.fetchrow(
-            "SELECT * FROM assistant WHERE room_restriction_id = $1 and id = $2;",
-            id,
+        data = await conn.fetchrow(
+            "SELECT * FROM assistant WHERE room_id = $1 and id = $2;",
+            room_id,
             assistant_id,
         )
         if not data:
             raise ValueError("No assistant found")
-        assistant = patch_assistant(assistant, data)
-        data = conn.fetchrow(
-            "UPDATE assistant SET name = $1, description = $2, instruction = $3, override_json_settings = $4, model_name = $5, provider_list = $6, share_type = $7 WHERE room_restriction_id = $8 AND id = $9 RETURNING *;",
+        assistant = patch_assistant(assistant, dict(data))
+        data = await conn.fetchrow(
+            "UPDATE assistant SET name = $1, description = $2, instruction = $3, override_json_settings = $4, model_name = $5, provider_list = $6, share_type = $7 WHERE room_id = $8 AND id = $9 RETURNING *;",
             assistant["name"],
             assistant["description"],
             assistant["instruction"],
@@ -247,7 +265,7 @@ async def patch_room_assistant(
             assistant["model_name"],
             assistant["provider_list"],
             assistant["share_type"],
-            id,
+            room_id,
             assistant_id,
         )
         if not data:
@@ -262,20 +280,16 @@ async def add_room_assistant_files(config: dict, assistant_id: UUID, files: list
     if role not in [Role.CREATOR, Role.MODERATOR]:
         raise ValueError("You must be at least Moderator!")
     async with get_connection_pool().acquire() as conn:
-        id = conn.fetchval(
-            "SELECT id FROM room_restriction WHERE room_id = $1;", room_id
-        )
-        if not id:
-            raise ValueError("No restrictions have been made")
-        data = conn.fetchrow(
-            "SELECT * FROM assistant WHERE room_restriction_id = $1 and id = $2;",
-            id,
+        data = await conn.fetchrow(
+            "SELECT * FROM assistant WHERE room_id = $1 and id = $2;",
+            room_id,
             assistant_id,
         )
         if not data:
             raise ValueError("No assistant found")
-        file_list = await conn.fetchrow(
+        file_list = await conn.fetch(
             "SELECT id FROM uploaded_file WHERE id IN (SELECT unnest($1::uuid[])) AND account_id = $1;",
+            files,
             account_id,
         )
         if len(file_list) != len(files):
@@ -303,28 +317,25 @@ async def get_room_assistant_files(
         return [AssistantFile.load_from_db(row) for row in data]
 
 
-async def delete_room_assistant_file(config: dict, assistant_id: UUID, file_id: UUID):
+async def delete_room_assistant_file(
+    config: dict, assistant_id: UUID, file_ids: list[UUID]
+):
     room_id = config["configurable"]["room"]["id"]
     role = config["configurable"]["role"]
     if role not in [Role.CREATOR, Role.MODERATOR]:
         raise ValueError("You must be at least Moderator!")
     async with get_connection_pool().acquire() as conn:
-        id = conn.fetchval(
-            "SELECT id FROM room_restriction WHERE room_id = $1;", room_id
-        )
-        if not id:
-            raise ValueError("No restrictions have been made")
-        data = conn.fetchrow(
-            "SELECT * FROM assistant WHERE room_restriction_id = $1 and id = $2;",
-            id,
+        data = await conn.fetchrow(
+            "SELECT * FROM assistant WHERE room_id = $1 and id = $2;",
+            room_id,
             assistant_id,
         )
         if not data:
             raise ValueError("No assistant found")
         data = await conn.execute(
-            "DELETE FROM assistant_file WHERE assistant_id = $1 AND uploaded_file_id = $2;",
+            "DELETE FROM assistant_file WHERE assistant_id = $1 AND uploaded_file_id IN (SELECT unnest($2::uuid[]))",
             assistant_id,
-            file_id,
+            file_ids,
         )
         if not data:
             raise ValueError("File not present")
@@ -338,7 +349,7 @@ async def create_platform_assistant(
     if not can_create:
         raise ValueError("You must be at least Admin!")
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetchrow(
+        data = await conn.fetchrow(
             "INSERT INTO assistant(name, description, instruction, override_json_settings, model_name, provider_list, share_type) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;",
             assistant.name,
             assistant.description,
@@ -354,10 +365,13 @@ async def create_platform_assistant(
 async def list_platform_assistant() -> list[OutputAssistant]:
     # Everyone can see platform assistants
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetch(
+        data = await conn.fetch(
             "SELECT * FROM assistant WHERE room_restriction_id IS NULL AND account_id IS NULL;"
         )
-        return [OutputAssistant.load_from_db(row) for row in data]
+        assistants: list[OutputAssistant] = [
+            OutputAssistant.load_from_db(row) for row in data
+        ]
+        return await load_transient_fields(conn, assistants)
 
 
 async def delete_platform_assistant(config: dict, assistant_id: UUID) -> None:
@@ -366,7 +380,7 @@ async def delete_platform_assistant(config: dict, assistant_id: UUID) -> None:
     if not can_delete:
         raise ValueError("You must be at least Admin!")
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetchrow(
+        data = await conn.execute(
             "DELETE FROM assistant WHERE id = $1 AND room_restriction_id IS NULL AND account_id IS NULL;",
             assistant_id,
         )
@@ -382,14 +396,14 @@ async def patch_platform_assistant(
     if not can_delete:
         raise ValueError("You must be at least Admin!")
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetchrow(
+        data = await conn.fetchrow(
             "SELECT * FROM assistant WHERE id = $1 AND room_restriction_id IS NULL AND account_id IS NULL;",
             assistant_id,
         )
         if not data:
             raise ValueError("No assistant found")
-        assistant = patch_assistant(assistant, data)
-        data = conn.fetchrow(
+        assistant = patch_assistant(assistant, dict(data))
+        data = await conn.fetchrow(
             "UPDATE assistant SET name = $1, description = $2, instruction = $3, override_json_settings = $4, model_name = $5, provider_list = $6, share_type = $7 WHERE id = $8 RETURNING *;",
             assistant["name"],
             assistant["description"],
@@ -414,14 +428,15 @@ async def add_platform_assistant_files(
     if not can_use:
         raise ValueError("You must be at least Admin!")
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetchrow(
+        data = await conn.fetchrow(
             "SELECT * FROM assistant WHERE id = $1 AND room_restriction_id IS NULL AND account_id IS NULL;",
             assistant_id,
         )
         if not data:
             raise ValueError("No assistant found")
-        file_list = await conn.fetchrow(
+        file_list = await conn.fetch(
             "SELECT id FROM uploaded_file WHERE id IN (SELECT unnest($1::uuid[])) AND account_id = $1;",
+            files,
             account_id,
         )
         if len(file_list) != len(files):
@@ -447,23 +462,23 @@ async def get_platform_assistant_files(
 
 
 async def delete_platform_assistant_file(
-    config: dict, assistant_id: UUID, file_id: UUID
+    config: dict, assistant_id: UUID, file_ids: list[UUID]
 ):
     roles = config["configurable"]["user_info"]["admin_roles"]
     can_use = AdminRole.ADMIN_DASHBORAD in roles
     if not can_use:
         raise ValueError("You must be at least Admin!")
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetchrow(
+        data = await conn.fetchrow(
             "SELECT * FROM assistant WHERE id = $1 AND room_restriction_id IS NULL AND account_id IS NULL;",
             assistant_id,
         )
         if not data:
             raise ValueError("No assistant found")
         data = await conn.execute(
-            "DELETE FROM assistant_file WHERE assistant_id = $1 AND uploaded_file_id = $2;",
+            "DELETE FROM assistant_file WHERE assistant_id = $1 AND uploaded_file_id IN (SELECT unnest($2::uuid[]));",
             assistant_id,
-            file_id,
+            file_ids,
         )
         if not data:
             raise ValueError("File not present")

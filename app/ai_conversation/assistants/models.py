@@ -27,7 +27,7 @@ class InputAssistant:
 @dataclass
 class OutputAssistant:
     id: UUID
-    room_restriction_id: UUID
+    room_id: UUID
     account_id: UUID
     name: str
     description: str
@@ -39,9 +39,27 @@ class OutputAssistant:
     created_at: datetime
     updated_at: datetime
 
+
 @entity
 @dataclass
 class AssistantFile:
     assistant_id: UUID
     uploaded_file_id: UUID
     created_at: datetime
+
+
+@entity
+@dataclass
+class UploadedFile:
+    id: UUID
+    content_id: UUID
+    account_id: UUID
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
+class WrappedAssistant:
+    assistant: OutputAssistant
+    files: list[tuple[AssistantFile, UploadedFile]]

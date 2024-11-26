@@ -53,7 +53,7 @@ CREATE TABLE uploaded_file (
   updated_at timestamp NULL,
 
   PRIMARY KEY (id),
-  UNIQUE (content_id, account_id),
+  UNIQUE (content_id, account_id, name),
   FOREIGN KEY (content_id) REFERENCES uploaded_file_content(id) ON DELETE CASCADE,
   FOREIGN KEY (account_id) REFERENCES account(id) ON DELETE CASCADE
 );
@@ -68,10 +68,15 @@ EXECUTE PROCEDURE trigger_timestamp_create_update_func();
 
 CREATE TABLE restrictions (
   id uuid NOT NULL DEFAULT uuid_generate_v1(),
+  account_id uuid NULL,
+  room_id uuid NULL,
+  administrated bool NOT NULL DEFAULT false,
   created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp NULL,
 
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  FOREIGN KEY (account_id) REFERENCES account(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE
 );
 
 CREATE TRIGGER trigger_timestamp_restrictions
@@ -109,7 +114,7 @@ CREATE TABLE quota_restriction (
   id uuid NOT NULL DEFAULT uuid_generate_v1(),
   restriction_id uuid NOT NULL,
   quota numeric(32, 16) NOT NULL,
-  counter numeric(32, 16) NOT NULL,
+  counter numeric(32, 16) NOT NULL DEFAULT 0,
   target restriction_target NOT NULL,
   reset_strategy varchar(32) NOT NULL,
   timezone varchar(32) NOT NULL,
@@ -241,14 +246,36 @@ CREATE TABLE api_setup_allowed_model (
   FOREIGN KEY (api_model_info_id) REFERENCES api_model_info(id) ON DELETE CASCADE
 );
 
+-- api voucher
+
+CREATE TABLE api_voucher (
+  id uuid NOT NULL DEFAULT uuid_generate_v1(),
+  room_id uuid NULL,
+  voucher varchar(64) NOT NULL,
+  restriction_id uuid NOT NULL,
+  created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at timestamp NULL,
+
+  PRIMARY KEY (id),
+  FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE SET NULL,
+  FOREIGN KEY (restriction_id) REFERENCES restrictions(id) ON DELETE CASCADE
+);
+
+
+CREATE TRIGGER trigger_timestamp_api_voucher
+    BEFORE INSERT OR UPDATE
+    ON api_voucher
+    FOR EACH ROW
+EXECUTE PROCEDURE trigger_timestamp_create_update_func();
+
 -- room restrictions: api setup, restrictions, voucher
 
-CREATE TABLE room_restriction (
+CREATE TABLE room_ai_setting (
   id uuid NOT NULL DEFAULT uuid_generate_v1(),
   room_id uuid NOT NULL,
   restriction_id uuid NULL,
   api_setup_id uuid NULL,
-  voucher varchar(255) NULL,
+  api_voucher_id uuid NULL,
   allow_global_assistants bool NOT NULL DEFAULT true,
   allow_user_assistants bool NOT NULL DEFAULT false,
   created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -258,8 +285,15 @@ CREATE TABLE room_restriction (
   UNIQUE (room_id, restriction_id),
   FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE,
   FOREIGN KEY (restriction_id) REFERENCES restrictions(id) ON DELETE SET NULL,
-  FOREIGN KEY (api_setup_id) REFERENCES api_setup(id) ON DELETE SET NULL
+  FOREIGN KEY (api_setup_id) REFERENCES api_setup(id) ON DELETE SET NULL,
+  FOREIGN KEY (api_voucher_id) REFERENCES api_voucher(id) ON DELETE SET NULL
 );
+
+CREATE TRIGGER trigger_timestamp_room_ai_setting
+    BEFORE INSERT OR UPDATE
+    ON room_ai_setting
+    FOR EACH ROW
+EXECUTE PROCEDURE trigger_timestamp_create_update_func();
 
 -- assistant: todo: files, tools!
 
@@ -267,7 +301,7 @@ CREATE TYPE assistant_share AS ENUM ('MINIMAL', 'VIEWABLE', 'COPYABLE');
 
 CREATE TABLE assistant (
   id uuid NOT NULL DEFAULT uuid_generate_v1(),
-  room_restriction_id uuid NULL,
+  room_id uuid NULL,
   account_id uuid NULL,
   name varchar(256) NOT NULL,
   description varchar(4096) NOT NULL,
@@ -280,7 +314,7 @@ CREATE TABLE assistant (
   updated_at timestamp NULL,
 
   PRIMARY KEY (id),
-  FOREIGN KEY (room_restriction_id) REFERENCES room_restriction(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE,
   FOREIGN KEY (account_id) REFERENCES account(id) ON DELETE CASCADE
 );
 

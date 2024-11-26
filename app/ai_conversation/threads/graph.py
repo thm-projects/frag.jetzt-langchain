@@ -68,7 +68,7 @@ async def _rag_for_last_message(state: GraphState):
         raise ValueError("Last message must be human")
     documents = await get_chroma().as_retriever().ainvoke(_message_to_str(input))
     if len(documents) < 1:
-        return {}
+        return {"messages": []}
     message = AIMessage(content="", artifact={"documents": documents})
     return {"messages": [message]}
 
