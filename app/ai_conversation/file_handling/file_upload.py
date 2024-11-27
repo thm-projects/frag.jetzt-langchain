@@ -139,6 +139,7 @@ async def _handle_file(file: UploadFile):
             # async write file chunk
             await out_file.write(content)
     if last_bytes is None:
+        remove_files([file_ref])
         return "File is empty"
     # create identifying hash
     last_bytes = last_bytes[-16:]
