@@ -63,6 +63,7 @@ async def handle_file_upload(files: List[UploadFile], user_id: UUID) -> list[dic
         )
     return results
 
+
 async def handle_file_list(user_id: UUID):
     async with get_connection_pool().acquire() as conn:
         files = await conn.fetch(
@@ -96,6 +97,22 @@ async def handle_file_get(file_id: str, user_id: UUID):
         path = f"{os.getcwd()}/files/{file['file_ref']}"
         media_type = magic.from_file(path, mime=True)
         return FileResponse(path=path, filename=file["name"], media_type=media_type)
+
+
+async def handle_file_info(file_id: UUID, user_id: UUID):
+    async with get_connection_pool().acquire() as conn:
+        file = await conn.fetchrow(
+            "SELECT * FROM uploaded_file WHERE id = $1;",
+            file_id,
+        )
+        if not file:
+            raise HTTPException(status_code=404, detail="File not found")
+        if str(file["account_id"]) == str(user_id):
+            return dict(file)
+        return {
+            "id": file["id"],
+            "name": file["name"],
+        }
 
 
 async def _find_content_by_hash(hash: str, file_ref: str, unprocessed: bool = True):

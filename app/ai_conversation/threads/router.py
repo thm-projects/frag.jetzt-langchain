@@ -32,13 +32,15 @@ async def list_chats(request: Request):
 
 @router.post("/new", dependencies=ROOM_DEPENDENCIES, tags=["Thread"])
 async def create_new_chat(
-    request: Request, message: HumanMessage = Body(..., embed=True)
+    request: Request, message: HumanMessage = Body(...), assistant_id: UUID = Body(...)
 ):
     try:
         config = {"configurable": {}}
         await per_req_config_modifier(config, request)
         return EventSourceResponse(
-            _async_yield_wrapper(get_graph_wrapper().new_chat(message, config))
+            _async_yield_wrapper(
+                get_graph_wrapper().new_chat(config, message, assistant_id)
+            )
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -48,14 +50,17 @@ async def create_new_chat(
 async def continue_chat(
     request: Request,
     thread_id: UUID,
-    message: HumanMessage = Body(None, embed=True),
+    message: HumanMessage = Body(None),
+    assistant_id: UUID = Body(...),
 ):
     try:
         config = {"configurable": {}}
         await per_req_config_modifier(config, request)
         return EventSourceResponse(
             _async_yield_wrapper(
-                get_graph_wrapper().continue_chat(message, thread_id, config)
+                get_graph_wrapper().continue_chat(
+                    config, thread_id, assistant_id, message
+                )
             )
         )
     except Exception as e:

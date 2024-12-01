@@ -2,12 +2,42 @@ from uuid import UUID
 from app.ai_conversation.ai_conversation import get_connection_pool
 from app.ai_conversation.assistants.models import (
     AssistantFile,
+    AssistantShareType,
     InputAssistant,
     OutputAssistant,
     UploadedFile,
     WrappedAssistant,
 )
 from app.ai_conversation.services.role_checker import AdminRole, Role
+
+
+async def get_generic_assistant(config: dict, assistant_id: UUID) -> WrappedAssistant:
+    room_id = config["configurable"]["room"]["id"]
+    account_id = config["configurable"]["user_info"]["id"]
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    is_admin = AdminRole.ADMIN_DASHBORAD in roles
+    async with get_connection_pool().acquire() as conn:
+        data = await conn.fetchrow(
+            "SELECT * FROM assistant WHERE id = $1;", assistant_id
+        )
+        if not data:
+            return None
+        assistant: OutputAssistant = OutputAssistant.load_from_db(data)
+        # Ensure assistant can be used
+        if assistant.account_id is not None:
+            if (
+                account_id != assistant.account_id
+                and assistant.share_type == AssistantShareType.MINIMAL
+            ):
+                return None
+        elif assistant.room_id is not None:
+            if room_id != assistant.room_id:
+                return None
+        else:
+            if not is_admin and assistant.share_type == AssistantShareType.MINIMAL:
+                return None
+
+        return (await load_transient_fields(conn, [assistant]))[0]
 
 
 async def load_transient_fields(
@@ -25,14 +55,14 @@ async def load_transient_fields(
     file_refs = [UploadedFile.load_from_db(row) for row in data]
     file_refs = {x.id: x for x in file_refs}
     return [
-        {
-            "assistant": a,
-            "files": [
+        WrappedAssistant(
+            a,
+            [
                 (f, file_refs[f.uploaded_file_id])
                 for f in files
                 if f.assistant_id == a.id
             ],
-        }
+        )
         for a in assistants
     ]
 

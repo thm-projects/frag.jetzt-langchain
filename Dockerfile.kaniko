@@ -10,11 +10,11 @@ COPY ./pyproject.toml ./README.md ./poetry.lock* ./
 
 COPY ./package[s] ./packages
 
-RUN poetry install --no-interaction --no-ansi --no-root
+RUN poetry install --no-interaction --no-ansi --no-root && pip install pyarrow==18.0.0
 
 COPY ./app ./app
 
-RUN poetry install --no-interaction --no-ansi && pip install pyarrow==18.0.0 && poetry run python -m app.cache
+RUN poetry run python -m app.cache
 
 EXPOSE 8080
 

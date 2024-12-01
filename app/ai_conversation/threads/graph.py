@@ -2,7 +2,12 @@ from typing import Any, List
 from uuid import UUID
 from fastapi import HTTPException
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import (
+    HumanMessage,
+    ToolMessage,
+    BaseMessage,
+    SystemMessage,
+)
 from langchain_core.prompts import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
@@ -11,6 +16,8 @@ from langchain_core.prompts import (
 from langgraph.graph import START, END, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from app.ai_conversation.ai_conversation import get_postgres_checkpointer
+from app.ai_conversation.assistants.models import WrappedAssistant
+from app.ai_conversation.assistants.service import get_generic_assistant
 from app.ai_conversation.entities.thread import Thread
 from app.ai_conversation.file_handling.vectorstore import get_chroma
 from langchain_core.runnables import RunnableConfig
@@ -21,18 +28,19 @@ from app.ai_conversation.threads.chat_namer import chain as chat_namer_chain
 import json
 import datetime
 
+rag_template = SystemMessagePromptTemplate.from_template(
+    """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question.
+       Add citations in the form of †[document_id, metadata_as_json]† at the end of a paragraph, inside the text or at the end of the answer when you use information from a document.
+       When you use more than one document, add the citations in the order you use them.
+       If you don't know the answer, just say that you don't know. Keep the answer concise and always answer in the language of the user.
+
+       Context: {context}"""
+)
+
 prompt = ChatPromptTemplate.from_messages(
     [
         MessagesPlaceholder(variable_name="conversation"),
-        SystemMessagePromptTemplate.from_template(
-            """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question.
-            Add citations in the form of †[document_id, metadata_as_json]† at the end of a paragraph, inside the text or at the end of the answer when you use information from a document.
-            When you use more than one document, add the citations in the order you use them.
-            If you don't know the answer, just say that you don't know. Keep the answer concise and always answer in the language of the user.
-
-            Context: {context}"""
-        ),
-        MessagesPlaceholder(variable_name="additional_prompt", optional=True),
+        MessagesPlaceholder(variable_name="system_messages"),
         MessagesPlaceholder(variable_name="question"),
     ]
 )
@@ -61,35 +69,72 @@ def _message_to_str(message: HumanMessage):
     return text
 
 
-async def _rag_for_last_message(state: GraphState):
+def _make_content_ids(state: GraphState, config: RunnableConfig):
+    assistant: WrappedAssistant = config["configurable"]["assistant"]
+    ids = set([f.content_id for _, f in assistant.files])
+    messages: list[BaseMessage] = state["messages"]
+    message_ids = set(
+        [e for m in messages for e in m.additional_kwargs.get("attachments", [])]
+    )
+    ids.update(message_ids)
+    return list(ids)
+
+
+async def _rag_for_last_message(state: GraphState, config: RunnableConfig):
     messages = state["messages"]
     input = messages[-1]
     if input.type != "human":
         raise ValueError("Last message must be human")
-    documents = await get_chroma().as_retriever().ainvoke(_message_to_str(input))
+    documents = (
+        await get_chroma()
+        .as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={
+                "score_threshold": 0.4,
+                "k": 7,
+            },
+            filter={"ref_id": {"$in": _make_content_ids(state, config)}},
+        )
+        .ainvoke(_message_to_str(input))
+    )
     if len(documents) < 1:
         return {"messages": []}
-    message = AIMessage(content="", artifact={"documents": documents})
+    message = ToolMessage(
+        content="", artifact={"documents": documents}, tool_call_id="rag"
+    )
     return {"messages": [message]}
 
 
-def _filter_docs(docs: list[Document]):
-    return list(filter(lambda x: x.type not in ["rag"], docs))
+def _filter_messages(messages: list[BaseMessage]):
+    return list(
+        filter(
+            lambda x: not isinstance(x, ToolMessage) or x.tool_call_id not in ["rag"],
+            messages,
+        )
+    )
 
 
 async def _make_answer(state: GraphState, config: RunnableConfig):
+    assistant: WrappedAssistant = config["configurable"]["assistant"]
     messages = state["messages"]
-    documents = messages[-1].artifact["documents"]
-    input = messages[-2]
-    conversation = _filter_docs(messages[:-2])
+    input = messages[-1]
+    end = -1
+    system_messages = []
+    if input.type == "tool":
+        system_messages.append(
+            rag_template.format(context=format_docs(input.artifact["documents"]))
+        )
+        input = messages[-2]
+        end = -2
+    system_messages.append(SystemMessage(content=assistant.assistant.instruction))
+    conversation = _filter_messages(messages[:end])
     llm = select_model(None, config)
     chain = prompt | llm
     response = await chain.ainvoke(
         {
             "question": [input],
-            "context": format_docs(documents),
             "conversation": conversation,
-            "additional_prompt": [],
+            "system_messages": system_messages,
         }
     )
     return {"messages": [response]}
@@ -126,10 +171,20 @@ class GraphWrapper:
         user_id = configurable["user_info"]["id"]
         return await list_threads(room_id, user_id)
 
-    async def new_chat(self, input: HumanMessage, config: RunnableConfig) -> Any:
+    async def new_chat(
+        self, config: RunnableConfig, input: HumanMessage, assistant_id: UUID
+    ) -> Any:
         configurable = config["configurable"]
         room_id = configurable["room"]["id"]
         user_id = configurable["user_info"]["id"]
+        input = self._strip_information(input)
+        assistant = await get_generic_assistant(config, assistant_id)
+        if not assistant:
+            raise HTTPException(
+                status_code=404,
+                detail="Assistant not found",
+            )
+        configurable["assistant"] = assistant
         name = await chat_namer_chain.ainvoke({"messages": [input]}, config)
         thread = await create_thread(
             room_id,
@@ -145,11 +200,23 @@ class GraphWrapper:
             yield event
 
     async def continue_chat(
-        self, input: HumanMessage | None, thread_id: UUID, config: RunnableConfig
+        self,
+        config: RunnableConfig,
+        thread_id: UUID,
+        assistant_id: UUID,
+        input: HumanMessage | None,
     ) -> Any:
         configurable = config["configurable"]
         room_id = configurable["room"]["id"]
         user_id = configurable["user_info"]["id"]
+        input = self._strip_information(input)
+        assistant = await get_generic_assistant(config, assistant_id)
+        if not assistant:
+            raise HTTPException(
+                status_code=404,
+                detail="Assistant not found",
+            )
+        configurable["assistant"] = assistant
         thread = await get_thread(thread_id, room_id, user_id)
         if not thread:
             raise HTTPException(
@@ -195,8 +262,14 @@ class GraphWrapper:
         yield {"event": "end"}
 
     def _strip_information(self, message: HumanMessage):
+        if not message:
+            return None
+        additional = message.additional_kwargs
         return HumanMessage(
             content=message.content,
+            additional_kwargs={
+                "attachments": additional.get("attachments", []),
+            },
         )
 
 

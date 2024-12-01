@@ -85,6 +85,7 @@ async def init():
         client=client,
         collection_name="langchain",
         embedding_function=sentence_transformer_ef,
+        collection_metadata={"hnsw:space": "cosine"},
     )
     set_chroma(chroma)
     # Scheduler

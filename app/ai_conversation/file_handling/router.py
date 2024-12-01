@@ -4,6 +4,7 @@ from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from app.ai_conversation.file_handling.file_upload import (
+    handle_file_info,
     handle_file_upload,
     handle_file_delete,
     handle_file_get,
@@ -18,6 +19,9 @@ router = APIRouter()
 async def list_files(request: Request) -> list[dict]:
     return await handle_file_list(request.state.user_id)
 
+@router.get("/info/{file_id}", dependencies=DEPENDENCIES, tags=["File"])
+async def get_file_info(request: Request, file_id: UUID) -> dict:
+    return await handle_file_info(file_id, request.state.user_id)
 
 @router.post("/upload", dependencies=DEPENDENCIES, tags=["File"])
 async def upload(request: Request, files: List[UploadFile] = File(...)) -> list[dict]:
