@@ -374,7 +374,7 @@ async def create_api_model(config: dict, api_model_info: InputAPIModelInfo) -> O
     account_id = config["configurable"]["user_info"]["id"]
     async with get_connection_pool().acquire() as conn:
         data = conn.fetchrow(
-            "INSERT INTO api_model_info(account_id, model_name, provider, configurable_fields, input_token_cost, output_token_cost, max_tokens) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;",
+            "INSERT INTO api_model_info(account_id, model_name, provider, configurable_fields, input_token_cost, output_token_cost, max_tokens, max_context_length, currency) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *;",
             account_id,
             api_model_info.model_name,
             api_model_info.provider,
@@ -382,6 +382,8 @@ async def create_api_model(config: dict, api_model_info: InputAPIModelInfo) -> O
             api_model_info.input_token_cost,
             api_model_info.output_token_cost,
             api_model_info.max_tokens,
+            api_model_info.max_context_length,
+            api_model_info.currency,
         )
         return OutputAPIModelInfo.load_from_db(data)
 
@@ -407,15 +409,21 @@ async def patch_api_model(config: dict, api_model_info: dict) -> OutputAPIModelI
             data["output_token_cost"] = api_model_info["output_token_cost"]
         if "max_tokens" in api_model_info:
             data["max_tokens"] = api_model_info["max_tokens"]
+        if "max_context_length" in api_model_info:
+            data["max_context_length"] = api_model_info["max_context_length"]
+        if "currency" in api_model_info:
+            data["currency"] = api_model_info["currency"]
         obj = OutputAPIModelInfo.load_from_db(data)
         data = conn.fetchrow(
-            "UPDATE api_model_info SET model_name = $1, provider = $2, configurable_fields = $3, input_token_cost = $4, output_token_cost = $5, max_tokens = $6 WHERE id = $7 RETURNING *;",
+            "UPDATE api_model_info SET model_name = $1, provider = $2, configurable_fields = $3, input_token_cost = $4, output_token_cost = $5, max_tokens = $6, max_context_length = $7, currency = $8 WHERE id = $9 RETURNING *;",
             obj.model_name,
             obj.provider,
             obj.configurable_fields,
             obj.input_token_cost,
             obj.output_token_cost,
             obj.max_tokens,
+            obj.max_context_length,
+            obj.currency,
             obj.id,
         )
         return OutputAPIModelInfo.load_from_db(data)

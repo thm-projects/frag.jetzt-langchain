@@ -18,8 +18,14 @@ from langchain_huggingface import HuggingFaceEmbeddings
 async_connection_pool = None
 postgres_checkpointer = None
 scheduler = None
+sentence_transformer_ef = None
+# "avsolatorio/GIST-all-MiniLM-L6-v2"
+# "nomic-ai/nomic-embed-text-v1.5"
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
+def get_embedding_function():
+    global sentence_transformer_ef
+    return sentence_transformer_ef
 
 def get_connection_pool():
     global async_connection_pool
@@ -79,6 +85,7 @@ async def init():
             chroma_client_auth_credentials=os.getenv("CHROMA_TOKEN", "test-token"),
         ),
     )
+    global sentence_transformer_ef
     model = MODEL_NAME  # sentence-transformers/all-mpnet-base-v2
     sentence_transformer_ef = HuggingFaceEmbeddings(model_name=model)
     chroma = Chroma(

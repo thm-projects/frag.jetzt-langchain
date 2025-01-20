@@ -1,84 +1,32 @@
-# test-app
+# frag.jetzt Langchain (AI Provider)
+
+This service serves all AI related functions for the webapp frag.jetzt.
+See [git.thm.de/arsnova/frag.jetzt](https://git.thm.de/arsnova/frag.jetzt) or [github.com/thm-projects/frag.jetzt](https://github.com/thm-projects/frag.jetzt).
 
 ## Installation
 
-Install the LangChain CLI if you haven't yet
+You need to use [git.thm.de/arsnova/frag.jetzt-docker-orchestration](https://git.thm.de/arsnova/frag.jetzt-docker-orchestration) to run this app either locally (`./run-local.sh`), with docker (`./run-docker.sh`) or manually (using `langchain serve`).
+
+When you have [Poetry](https://python-poetry.org/docs/) installed, simply type `poetry install`.
+
+Install `libmagic` (or `libmagic-dev`), if necessary.
+
+To run all evaluations and tests, you need to install celadon **inside the train directory**.
+See [here](https://github.com/Pleias/toxic-commons?tab=readme-ov-file#installation) for more information.
+
+```shell
+cd train
+git clone https://huggingface.co/PleIAs/celadon
+```
+
+If you need to install LangChain CLI:
 
 ```bash
 pip install -U langchain-cli
 ```
 
-## Adding packages
-
-```bash
-# adding packages from 
-# https://github.com/langchain-ai/langchain/tree/master/templates
-langchain app add $PROJECT_NAME
-
-# adding custom GitHub repo packages
-langchain app add --repo $OWNER/$REPO
-# or with whole git string (supports other git providers):
-# langchain app add git+https://github.com/hwchase17/chain-of-verification
-
-# with a custom api mount point (defaults to `/{package_name}`)
-langchain app add $PROJECT_NAME --api_path=/my/custom/path/rag
-```
-
-Note: you remove packages by their api path
-
-```bash
-langchain app remove my/custom/path/rag
-```
-
-## Setup LangSmith (Optional)
-LangSmith will help us trace, monitor and debug LangChain applications. 
-You can sign up for LangSmith [here](https://smith.langchain.com/). 
-If you don't have access, you can skip this section
-
+How you build docker image for local run (`./run-docker.sh`):
 
 ```shell
-export LANGCHAIN_TRACING_V2=true
-export LANGCHAIN_API_KEY=<your-api-key>
-export LANGCHAIN_PROJECT=<your-project>  # if not specified, defaults to "default"
+./build-local.sh
 ```
-
-## Launch LangServe
-
-```bash
-langchain serve
-```
-
-## Running in Docker
-
-This project folder includes a Dockerfile that allows you to easily build and host your LangServe app.
-
-### Building the Image
-
-To build the image, you simply:
-
-```shell
-docker build . -t my-langserve-app
-```
-
-If you tag your image with something other than `my-langserve-app`,
-note it for use in the next step.
-
-### Running the Image Locally
-
-To run the image, you'll need to include any environment variables
-necessary for your application.
-
-In the below example, we inject the `OPENAI_API_KEY` environment
-variable with the value set in my local environment
-(`$OPENAI_API_KEY`)
-
-We also expose port 8080 with the `-p 8080:8080` option.
-
-```shell
-docker run -e OPENAI_API_KEY=$OPENAI_API_KEY -p 8080:8080 my-langserve-app
-```
-
-
-# Installation
-
-Install `libmagic` (or `libmagic-dev`).

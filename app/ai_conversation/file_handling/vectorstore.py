@@ -36,17 +36,17 @@ TEXT_SEPARATORS = [
     "",
 ]
 
-TEXT_CHUNK_SIZE = 750  # between 500 and 1000
-TEXT_CHUNK_OVERLAP = 100  # between 50 and 200
+TEXT_CHUNK_SIZE = 200
+TEXT_CHUNK_OVERLAP = 0
 
-CODE_CHUNK_SIZE = 350  # between 200 and 500
-CODE_CHUNK_OVERLAP = 75  # between 50 and 100
+CODE_CHUNK_SIZE = 250
+CODE_CHUNK_OVERLAP = 0
 
 CSS_SEPARATORS = [
     # CSS selectors, also SCSS mixins and functions
-    "\n[ \t]*[^{\n]+{[ \t\n$]+",
+    "[^\n][ \t]*[^{\n]+{[ \t\n$]+",
     # CSS properties
-    "\n[ \t]*\S+[ \t]*:",
+    "\n[ \t]*\\S+[ \t]*:",
     # standard delimiters
     *TEXT_SEPARATORS,
 ]
@@ -54,7 +54,7 @@ CSS_SEPARATORS = [
 JSON_SEPARATORS = [
     *TEXT_SEPARATORS[:2],
     # JSON keys
-    '\n\s*"[^"]+":',
+    '\n\\s*"[^"]+":',
     # standard delimiters
     *TEXT_SEPARATORS[2:],
 ]
@@ -100,10 +100,17 @@ def _add_ref(content: UploadedFileContent, docs: Iterable[Document]) -> None:
 
 
 # https://python.langchain.com/docs/integrations/document_loaders/
-async def import_to_vectorstore(content: UploadedFileContent) -> Union[str, bool]:
-    path = f"{os.getcwd()}/files/{content.file_ref}"
+async def import_to_vectorstore(
+    content: UploadedFileContent, custom_path: str = None
+) -> Union[str, bool]:
+    path = (
+        custom_path
+        if custom_path is not None
+        else f"{os.getcwd()}/files/{content.file_ref}"
+    )
     mime_type = magic.from_file(path, mime=True)
     docs = []
+    before_docs = []
     match mime_type:
         case (
             "audio/aac",
@@ -196,121 +203,124 @@ async def import_to_vectorstore(content: UploadedFileContent) -> Union[str, bool
             return "Not Allowed"
         case "application/vnd.oasis.opendocument.text":
             # https://python.langchain.com/docs/integrations/document_loaders/odt/
-            odt_docs = await UnstructuredODTLoader(path).aload()
-            _add_ref(content, odt_docs)
-            docs = standard_text_splitter.split_documents(odt_docs)
+            before_docs = await UnstructuredODTLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case "text/plain":
-            text_docs = await TextLoader(path).aload()
-            _add_ref(content, text_docs)
-            docs = standard_text_splitter.split_documents(text_docs)
+            before_docs = await TextLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case "text/css":
-            css_docs = await TextLoader(path).aload()
-            _add_ref(content, css_docs)
+            before_docs = await TextLoader(path).aload()
+            _add_ref(content, before_docs)
             splitter = RecursiveCharacterTextSplitter(
                 separators=CSS_SEPARATORS,
                 is_separator_regex=True,
                 chunk_size=CODE_CHUNK_SIZE,
                 chunk_overlap=CODE_CHUNK_OVERLAP,
             )
-            docs = splitter.split_documents(css_docs)
+            docs = splitter.split_documents(before_docs)
         case "text/javascript":
-            js_docs = await TextLoader(path).aload()
-            _add_ref(content, js_docs)
+            before_docs = await TextLoader(path).aload()
+            _add_ref(content, before_docs)
             splitter = _get_splitter_for_language(Language.JS)
-            docs = splitter.split_documents(js_docs)
+            docs = splitter.split_documents(before_docs)
         case "application/json":
-            json_docs = await TextLoader(path).aload()
-            _add_ref(content, json_docs)
+            before_docs = await TextLoader(path).aload()
+            _add_ref(content, before_docs)
             splitter = RecursiveCharacterTextSplitter(
                 separators=JSON_SEPARATORS,
                 is_separator_regex=True,
                 chunk_size=TEXT_CHUNK_SIZE,
                 chunk_overlap=TEXT_CHUNK_OVERLAP,
             )
-            docs = splitter.split_documents(json_docs)
+            docs = splitter.split_documents(before_docs)
         case "application/ld+json":
-            json_ld_docs = await TextLoader(path).aload()
-            _add_ref(content, json_ld_docs)
+            before_docs = await TextLoader(path).aload()
+            _add_ref(content, before_docs)
             splitter = RecursiveCharacterTextSplitter(
                 separators=JSON_SEPARATORS,
                 is_separator_regex=True,
                 chunk_size=TEXT_CHUNK_SIZE,
                 chunk_overlap=TEXT_CHUNK_OVERLAP,
             )
-            docs = splitter.split_documents(json_ld_docs)
+            docs = splitter.split_documents(before_docs)
         case "text/csv":
             # TODO: Better splitter with header? or UnstructuredCSVLoader
             # https://python.langchain.com/docs/integrations/document_loaders/csv/
-            csv_docs = await CSVLoader(path).aload()
-            _add_ref(content, csv_docs)
-            docs = standard_text_splitter.split_documents(csv_docs)
+            before_docs = await CSVLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case "application/x-latex", "application/x-tex":
-            tex_docs = await TextLoader(path).aload()
-            _add_ref(content, tex_docs)
+            before_docs = await TextLoader(path).aload()
+            _add_ref(content, before_docs)
             splitter = _get_splitter_for_language(Language.LATEX)
-            docs = splitter.split_documents(tex_docs)
+            docs = splitter.split_documents(before_docs)
         case "text/html":
             # https://python.langchain.com/docs/integrations/document_loaders/bshtml/
-            html_docs = await BSHTMLLoader(path).aload()
-            _add_ref(content, html_docs)
-            docs = standard_text_splitter.split_documents(html_docs)
+            before_docs = await BSHTMLLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case "application/xhtml+xml", "application/xml", "text/xml":
             # https://python.langchain.com/docs/integrations/document_loaders/xml/
-            xml_docs = await UnstructuredXMLLoader(path).aload()
-            _add_ref(content, xml_docs)
-            docs = standard_text_splitter.split_documents(xml_docs)
+            before_docs = await UnstructuredXMLLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case (
             "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ):
             # unstructured or normal?
             # https://python.langchain.com/docs/integrations/document_loaders/microsoft_word/#using-unstructured
-            word_docs = await UnstructuredWordDocumentLoader(path).aload()
-            _add_ref(content, word_docs)
-            docs = standard_text_splitter.split_documents(word_docs)
+            before_docs = await UnstructuredWordDocumentLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case "application/pdf":
             # TODO: Improve with images etc
             # https://python.langchain.com/docs/integrations/document_loaders/#pdfs
-            pdf_docs = await PyPDFLoader(path).aload()
-            _add_ref(content, pdf_docs)
-            docs = standard_text_splitter.split_documents(pdf_docs)
+            before_docs = await PyPDFLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case "application/x-httpd-php":
-            php_docs = await TextLoader(path).aload()
-            _add_ref(content, php_docs)
+            before_docs = await TextLoader(path).aload()
+            _add_ref(content, before_docs)
             splitter = _get_splitter_for_language(Language.PHP)
-            docs = splitter.split_documents(php_docs)
-            pass
+            docs = splitter.split_documents(before_docs)
         case (
             "application/vnd.ms-powerpoint",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         ):
             # https://python.langchain.com/docs/integrations/document_loaders/microsoft_powerpoint/
-            powerpoint_docs = await UnstructuredPowerPointLoader(path).aload()
-            _add_ref(content, powerpoint_docs)
-            docs = standard_text_splitter.split_documents(powerpoint_docs)
+            before_docs = await UnstructuredPowerPointLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case (
             "application/vnd.ms-excel",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ):
             # https://python.langchain.com/docs/integrations/document_loaders/microsoft_excel/
-            excel_docs = await UnstructuredExcelLoader(path).aload()
-            _add_ref(content, excel_docs)
-            docs = standard_text_splitter.split_documents(excel_docs)
+            before_docs = await UnstructuredExcelLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case "application/rtf":
-            rtf_docs = await UnstructuredRTFLoader(path).aload()
-            _add_ref(content, rtf_docs)
-            docs = standard_text_splitter.split_documents(rtf_docs)
+            before_docs = await UnstructuredRTFLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case "application/x-sh", "application/x-csh":
-            sh_docs = await TextLoader(path).aload()
-            _add_ref(content, sh_docs)
-            docs = standard_text_splitter.split_documents(sh_docs)
+            before_docs = await TextLoader(path).aload()
+            _add_ref(content, before_docs)
+            docs = standard_text_splitter.split_documents(before_docs)
         case _:
             return "Unknown MIME type: " + mime_type
     if docs:
         global chroma
         for doc in docs:
             doc.metadata["id"] = str(uuid4())
+        if custom_path is not None:
+            print(f"Inserting {len(docs)} documents for {content.id} with custom path")
         await chroma.aadd_documents(docs, ids=[doc.metadata["id"] for doc in docs])
+        if custom_path is not None:
+            return before_docs
     return True
 
 

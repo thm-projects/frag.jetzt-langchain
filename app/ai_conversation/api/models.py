@@ -83,6 +83,8 @@ class InputAPIModelInfo:
     input_token_cost: Decimal
     output_token_cost: Decimal
     max_tokens: Optional[int]
+    max_context_length: Optional[int]
+    currency: str
 
 @entity
 @dataclass
@@ -95,5 +97,7 @@ class OutputAPIModelInfo:
     input_token_cost: Decimal
     output_token_cost: Decimal
     max_tokens: Optional[int]
+    max_context_length: Optional[int]
+    currency: str
     created_at: datetime
     updated_at: datetime

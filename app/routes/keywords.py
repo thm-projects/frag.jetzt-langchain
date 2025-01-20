@@ -1,11 +1,25 @@
-from fastapi import HTTPException, status
+from langchain_core.runnables import RunnableLambda, RunnableConfig
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import (
     ConfigurableField,
     RunnableSerializable,
 )
 from app.routes.utils import select_model
+from pydantic import BaseModel, Field
+
+
+class KeywordExtraction(BaseModel):
+    """Contains all extracted keywords, entities and special numbers from the content."""
+
+    keywords: list[str] = Field(
+        description="Contains keywords, which contain the essential meaning of the text"
+    )
+    named_entities: list[str] = Field(
+        description="Contains proper nouns, names, people, organizations, locations, products, dates, identifiers and others"
+    )
+    special_numbers: list[str] = Field(
+        description="Important Numbers with metric, if available, such as distances, references, dates, monetary values, measurements, percentages and so on"
+    )
 
 chat_template = ChatPromptTemplate.from_messages(
     [
@@ -20,78 +34,33 @@ chat_template = ChatPromptTemplate.from_messages(
 
 **Example:** "On July 5th, 1991, a fish named Bob attempted to swim in 1 meter of water. Later in the year 1991, Bob successfully swam in the water."
 
-Output each section in the format:
-
-```
-Keywords: keyword1; keyword2; keyword3;
-:::
-Named Entities: entity1; entity2; entity3;
-:::
-Special Numbers: number1; number2; number3;
-```
-
-For the example given, your output would be:
-```
-Keywords: fish; swim; water;
-:::
-Named Entities: Bob;
-:::
-Special Numbers: 1 meter; Year 1991; July 5th, 1991;
-```
-
-If a section is empty, output an empty string for that section. If there are no keywords, named entities, or special numbers, output an empty string for each section.
-Like so:
-```
-Keywords:
-:::
-Named Entities:
-:::
-Special Numbers:
-```
-         """,
+Example output:
+{{
+  "keywords": ["fish", "swim", "water"],
+  "named_entities": ["Bob"],
+  "special_numbers": ["1 meter", "Year 1991", "July 5th, 1991"]
+}}
+""".strip(),
         ),
         ("human", "{text}"),
     ]
 )
 
 
-class StringTransformer(RunnableSerializable[str, dict[str, list[str]]]):
-    """Parses the string returned by the model."""
+class ExtractionTransformer(
+    RunnableSerializable[KeywordExtraction, dict[str, list[str]]]
+):
+    """Deduplicates entries, if necessary."""
 
     allow_duplicates: bool
 
-    def invoke(self, input: str, config) -> dict[str, list[str]]:
+    def invoke(self, input: KeywordExtraction, config) -> dict[str, list[str]]:
         """Invoke the transformer."""
-        if input.startswith("```"):
-            input = input[3:]
-        if input.endswith("```"):
-            input = input[:-3]
-        text = input.strip()
-        categories = text.split("\n:::\n")
-        if len(categories) != 3:
-            print("Failed keywords:", text)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Try again."
-            )
-        if (
-            not categories[0].lower().startswith("keywords:")
-            or not categories[1].lower().startswith("named entities:")
-            or not categories[2].lower().startswith("special numbers:")
-        ):
-            print("Failed keywords:", text)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Try again."
-            )
+
         keywords_dict = {
-            "keywords": [
-                x.strip() for x in categories[0][9:].split(";") if x.strip() != ""
-            ],
-            "entities": [
-                x.strip() for x in categories[1][15:].split(";") if x.strip() != ""
-            ],
-            "special": [
-                x.strip() for x in categories[2][16:].split(";") if x.strip() != ""
-            ],
+            "keywords": [x.strip() for x in input.keywords if x.strip() != ""],
+            "entities": [x.strip() for x in input.named_entities if x.strip() != ""],
+            "special": [x.strip() for x in input.special_numbers if x.strip() != ""],
         }
         if self.allow_duplicates:
             return keywords_dict
@@ -106,17 +75,24 @@ class StringTransformer(RunnableSerializable[str, dict[str, list[str]]]):
         return keywords_dict
 
 
-configurable_string_transformer = StringTransformer(
+configurable_extraction_transformer = ExtractionTransformer(
     allow_duplicates=False
 ).configurable_fields(
     allow_duplicates=ConfigurableField(
         id="allow_duplicates",
         name="Allow Duplicates",
-        description="If true, returns duplicates between the categories.",
+        description="If true, returns duplicates between the keywords.",
     )
 )
 
 
+async def get_structured_model(input: str, config: RunnableConfig):
+    model = select_model(input, config)
+    return await model.with_structured_output(KeywordExtraction).ainvoke(input)
+
+
 chain = (
-    chat_template | select_model | StrOutputParser() | configurable_string_transformer
+    chat_template
+    | RunnableLambda(get_structured_model)
+    | configurable_extraction_transformer
 )

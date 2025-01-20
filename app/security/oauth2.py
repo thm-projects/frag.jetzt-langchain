@@ -15,6 +15,9 @@ if not SECRET_KEY or not SECRET_ALGORITHM:
     exit("SECRET_KEY and SECRET_ALGORITHM is required")
 SECRET_KEY = base64.b64decode(SECRET_KEY)
 
+# temporary
+API_KEY = os.getenv("OPENAI_API_KEY")
+
 
 async def verify_room_id(
     request: Request,
@@ -85,7 +88,7 @@ async def per_req_config_modifier(config: Dict, request: Request) -> Dict:
     )
     config["configurable"]["provider"] = "openai"
     config["configurable"]["api_obj"] = {
-        "api_key": "sk-proj-92ZvpKzkPqIWGCESK2mdT3BlbkFJN5yuKcxxZaYaklYFAfwJ",
+        "api_key": API_KEY,
         "model": "gpt-4o-mini",
     }
     return config
