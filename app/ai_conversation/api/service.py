@@ -15,6 +15,7 @@ from app.ai_conversation.api.models import (
     OutputProviderSetting,
 )
 from app.routes.utils import REST_DATA
+from app.ai_conversation.services.role_checker import AdminRole
 
 
 def _check_type(value: any, type_: str) -> bool:
@@ -134,6 +135,23 @@ async def create_provider_setting(
         return OutputProviderSetting.load_from_db(data)
 
 
+async def create_provider_setting_admin(
+    config: dict, provider_setting: InputProviderSetting
+) -> OutputProviderSetting:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "INSERT INTO api_provider_setting(provider, json_settings, restriction_id) VALUES ($1, $2, $3) RETURNING *;",
+            provider_setting.provider,
+            provider_setting.json_settings,
+            provider_setting.restriction_id,
+        )
+        return OutputProviderSetting.load_from_db(data)
+
+
 async def patch_provider_setting(
     config: dict, provider_setting: dict, provider_id: UUID
 ) -> OutputProviderSetting:
@@ -167,12 +185,57 @@ async def patch_provider_setting(
         return OutputProviderSetting.load_from_db(data)
 
 
+async def patch_provider_setting_admin(
+    config: dict, provider_setting: dict, provider_id: UUID
+) -> OutputProviderSetting:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "SELECT * FROM api_provider_setting WHERE id = $1 AND account_id = NULL;",
+            provider_id,
+        )
+        if not data:
+            raise ValueError("Invalid provider settings id")
+        if "provider" in provider_setting:
+            if provider_setting["provider"] not in REST_DATA:
+                raise ValueError("Invalid provider")
+            data["provider"] = provider_setting["provider"]
+        if "restriction_id" in provider_setting:
+            data["restriction_id"] = provider_setting["restriction_id"]
+        if "json_settings" in provider_setting:
+            data["json_settings"] = provider_setting["json_settings"]
+        obj = OutputProviderSetting.load_from_db(data)
+        if "json_settings" in provider_setting:
+            _verify_provider_setting(obj)
+        data = conn.fetchrow(
+            "UPDATE api_provider_setting SET provider = $1, json_settings = $2, restriction_id = $3 WHERE id = $4 RETURNING *;",
+            obj.provider,
+            obj.json_settings,
+            obj.restriction_id,
+            obj.id,
+        )
+        return OutputProviderSetting.load_from_db(data)
+
+
 async def list_provider_settings(config: dict) -> list[OutputProviderSetting]:
     account_id = config["configurable"]["user_info"]["id"]
     async with get_connection_pool().acquire() as conn:
         data = conn.fetch(
             "SELECT * FROM api_provider_setting WHERE account_id = $1;", account_id
         )
+        return [OutputProviderSetting.load_from_db(row) for row in data]
+
+
+async def list_provider_settings_admin(config: dict) -> list[OutputProviderSetting]:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetch("SELECT * FROM api_provider_setting WHERE account_id = NULL;")
         return [OutputProviderSetting.load_from_db(row) for row in data]
 
 
@@ -183,6 +246,20 @@ async def delete_provider_setting(config: dict, provider_id: UUID) -> None:
             "DELETE FROM api_provider_setting WHERE id = $1 AND account_id = $2 RETURNING *;",
             provider_id,
             account_id,
+        )
+        if not data:
+            raise ValueError("Invalid provider settings id")
+
+
+async def delete_provider_setting_admin(config: dict, provider_id: UUID) -> None:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "DELETE FROM api_provider_setting WHERE id = $1 AND account_id = NULL RETURNING *;",
+            provider_id,
         )
         if not data:
             raise ValueError("Invalid provider settings id")
@@ -201,10 +278,37 @@ async def create_api_setup(config: dict, api_setup: InputAPISetup) -> OutputAPIS
         return OutputAPISetup.load_from_db(data)
 
 
+async def create_api_setup_admin(
+    config: dict, api_setup: InputAPISetup
+) -> OutputAPISetup:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "INSERT INTO api_setup(restriction_id, only_allowed_models, pricing_strategy) VALUES ($1, $2, $3) RETURNING *;",
+            api_setup.restriction_id,
+            api_setup.only_allowed_models,
+            api_setup.pricing_strategy,
+        )
+        return OutputAPISetup.load_from_db(data)
+
+
 async def list_api_setups(config: dict) -> list[OutputAPISetup]:
     account_id = config["configurable"]["user_info"]["id"]
     async with get_connection_pool().acquire() as conn:
         data = conn.fetch("SELECT * FROM api_setup WHERE account_id = $1;", account_id)
+        return [OutputAPISetup.load_from_db(row) for row in data]
+
+
+async def list_api_setups_admin(config: dict) -> list[OutputAPISetup]:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetch("SELECT * FROM api_setup WHERE account_id = NULL;")
         return [OutputAPISetup.load_from_db(row) for row in data]
 
 
@@ -215,6 +319,37 @@ async def patch_api_setup(config: dict, setup: dict, setup_id: UUID) -> OutputAP
             "SELECT * FROM api_setup WHERE id = $1 AND account_id = $2;",
             setup_id,
             account_id,
+        )
+        if not data:
+            raise ValueError("Invalid setup id")
+        if "restriction_id" in setup:
+            data["restriction_id"] = setup["restriction_id"]
+        if "only_allowed_models" in setup:
+            data["only_allowed_models"] = setup["only_allowed_models"]
+        if "pricing_strategy" in setup:
+            data["pricing_strategy"] = setup["pricing_strategy"]
+        obj = OutputAPISetup.load_from_db(data)
+        data = conn.fetchrow(
+            "UPDATE api_setup SET restriction_id = $1, only_allowed_models = $2, pricing_strategy = $3 WHERE id = $4 RETURNING *;",
+            obj.restriction_id,
+            obj.only_allowed_models,
+            obj.pricing_strategy,
+            obj.id,
+        )
+        return OutputAPISetup.load_from_db(data)
+
+
+async def patch_api_setup_admin(
+    config: dict, setup: dict, setup_id: UUID
+) -> OutputAPISetup:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "SELECT * FROM api_setup WHERE id = $1 AND account_id = NULL;",
+            setup_id,
         )
         if not data:
             raise ValueError("Invalid setup id")
@@ -247,6 +382,20 @@ async def delete_api_setup(config: dict, setup_id: UUID) -> None:
             raise ValueError("Invalid setup id")
 
 
+async def delete_api_setup_admin(config: dict, setup_id: UUID) -> None:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "DELETE FROM api_setup WHERE id = $1 AND account_id = NULL RETURNING *;",
+            setup_id,
+        )
+        if not data:
+            raise ValueError("Invalid setup id")
+
+
 async def create_api_setup_provider_setting(
     config: dict, api_setup_provider_setting: InputApiSetupProviderSetting
 ) -> OutputApiSetupProviderSetting:
@@ -263,6 +412,34 @@ async def create_api_setup_provider_setting(
             "SELECT id FROM api_provider_setting WHERE id = $1 AND account_id = $2;",
             api_setup_provider_setting.api_provider_setting_id,
             account_id,
+        )
+        if not data:
+            raise ValueError("Invalid provider settings id")
+        data = conn.fetchrow(
+            "INSERT INTO api_setup_provider(api_provider_setting_id, api_setup_id) VALUES ($1, $2) RETURNING *;",
+            api_setup_provider_setting.api_provider_setting_id,
+            api_setup_provider_setting.api_setup_id,
+        )
+        return OutputApiSetupProviderSetting.load_from_db(data)
+
+
+async def create_api_setup_provider_setting_admin(
+    config: dict, api_setup_provider_setting: InputApiSetupProviderSetting
+) -> OutputApiSetupProviderSetting:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "SELECT id FROM api_setup WHERE id = $1 AND account_id = NULL;",
+            api_setup_provider_setting.api_setup_id,
+        )
+        if not data:
+            raise ValueError("Invalid setup id")
+        data = conn.fetchrow(
+            "SELECT id FROM api_provider_setting WHERE id = $1 AND account_id = NULL;",
+            api_setup_provider_setting.api_provider_setting_id,
         )
         if not data:
             raise ValueError("Invalid provider settings id")
@@ -293,6 +470,27 @@ async def list_api_setup_provider_settings(
         return [OutputApiSetupProviderSetting.load_from_db(row) for row in data]
 
 
+async def list_api_setup_provider_settings_admin(
+    config: dict, setup_id: UUID
+) -> list[OutputApiSetupProviderSetting]:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "SELECT id FROM api_setup WHERE id = $1 AND account_id = NULL;",
+            setup_id,
+        )
+        if not data:
+            raise ValueError("Invalid setup id")
+        data = conn.fetch(
+            "SELECT * FROM api_setup_provider WHERE api_setup_id = $1;",
+            setup_id,
+        )
+        return [OutputApiSetupProviderSetting.load_from_db(row) for row in data]
+
+
 async def delete_api_setup_provider_setting(
     config: dict, setup_id: UUID, provider_id: UUID
 ) -> None:
@@ -302,6 +500,27 @@ async def delete_api_setup_provider_setting(
             "SELECT id FROM api_setup WHERE id = $1 AND account_id = $2;",
             setup_id,
             account_id,
+        )
+        if not data:
+            raise ValueError("Invalid setup id")
+        data = conn.fetchrow(
+            "DELETE FROM api_setup_provider WHERE api_provider_setting_id = $1 AND api_setup_id = $2 RETURNING *;",
+            provider_id,
+            setup_id,
+        )
+
+
+async def delete_api_setup_provider_setting_admin(
+    config: dict, setup_id: UUID, provider_id: UUID
+) -> None:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "SELECT id FROM api_setup WHERE id = $1 AND account_id = NULL;",
+            setup_id,
         )
         if not data:
             raise ValueError("Invalid setup id")
@@ -332,6 +551,28 @@ async def create_api_setup_allowed_model(
         return OutputApiSetupAllowedModel.load_from_db(data)
 
 
+async def create_api_setup_allowed_model_admin(
+    config: dict, input: InputApiSetupAllowedModel
+) -> OutputApiSetupAllowedModel:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "SELECT id FROM api_setup WHERE id = $1 AND account_id = NULL;",
+            input.api_setup_id,
+        )
+        if not data:
+            raise ValueError("Invalid setup id")
+        data = conn.fetchrow(
+            "INSERT INTO api_setup_allowed_model(api_setup_id, api_model_info_id) VALUES ($1, $2) RETURNING *;",
+            input.api_setup_id,
+            input.api_model_info_id,
+        )
+        return OutputApiSetupAllowedModel.load_from_db(data)
+
+
 async def list_api_setup_allowed_models(
     config: dict, setup_id: UUID
 ) -> list[OutputApiSetupAllowedModel]:
@@ -341,6 +582,27 @@ async def list_api_setup_allowed_models(
             "SELECT id FROM api_setup WHERE id = $1 AND account_id = $2;",
             setup_id,
             account_id,
+        )
+        if not data:
+            raise ValueError("Invalid setup id")
+        data = conn.fetch(
+            "SELECT * FROM api_setup_allowed_model WHERE api_setup_id = $1;",
+            setup_id,
+        )
+        return [OutputApiSetupAllowedModel.load_from_db(row) for row in data]
+
+
+async def list_api_setup_allowed_models_admin(
+    config: dict, setup_id: UUID
+) -> list[OutputApiSetupAllowedModel]:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "SELECT id FROM api_setup WHERE id = $1 AND account_id = NULL;",
+            setup_id,
         )
         if not data:
             raise ValueError("Invalid setup id")
@@ -370,7 +632,30 @@ async def delete_api_setup_allowed_model(
         )
 
 
-async def create_api_model(config: dict, api_model_info: InputAPIModelInfo) -> OutputAPIModelInfo:
+async def delete_api_setup_allowed_model_admin(
+    config: dict, setup_id: UUID, model_id: UUID
+) -> None:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "SELECT id FROM api_setup WHERE id = $1 AND account_id = NULL;",
+            setup_id,
+        )
+        if not data:
+            raise ValueError("Invalid setup id")
+        data = conn.fetchrow(
+            "DELETE FROM api_setup_allowed_model WHERE api_model_info_id = $1 AND api_setup_id = $2 RETURNING *;",
+            model_id,
+            setup_id,
+        )
+
+
+async def create_api_model(
+    config: dict, api_model_info: InputAPIModelInfo
+) -> OutputAPIModelInfo:
     account_id = config["configurable"]["user_info"]["id"]
     async with get_connection_pool().acquire() as conn:
         data = conn.fetchrow(
@@ -386,6 +671,29 @@ async def create_api_model(config: dict, api_model_info: InputAPIModelInfo) -> O
             api_model_info.currency,
         )
         return OutputAPIModelInfo.load_from_db(data)
+
+
+async def create_api_model_admin(
+    config: dict, api_model_info: InputAPIModelInfo
+) -> OutputAPIModelInfo:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "INSERT INTO api_model_info(model_name, provider, configurable_fields, input_token_cost, output_token_cost, max_tokens, max_context_length, currency) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;",
+            api_model_info.model_name,
+            api_model_info.provider,
+            api_model_info.configurable_fields,
+            api_model_info.input_token_cost,
+            api_model_info.output_token_cost,
+            api_model_info.max_tokens,
+            api_model_info.max_context_length,
+            api_model_info.currency,
+        )
+        return OutputAPIModelInfo.load_from_db(data)
+
 
 async def patch_api_model(config: dict, api_model_info: dict) -> OutputAPIModelInfo:
     account_id = config["configurable"]["user_info"]["id"]
@@ -428,11 +736,71 @@ async def patch_api_model(config: dict, api_model_info: dict) -> OutputAPIModelI
         )
         return OutputAPIModelInfo.load_from_db(data)
 
+
+async def patch_api_model_admin(
+    config: dict, api_model_info: dict
+) -> OutputAPIModelInfo:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "SELECT * FROM api_model_info WHERE id = $1 AND account_id = NULL;",
+            api_model_info.id,
+        )
+        if not data:
+            raise ValueError("Invalid model id")
+        if "model_name" in api_model_info:
+            data["model_name"] = api_model_info["model_name"]
+        if "provider" in api_model_info:
+            data["provider"] = api_model_info["provider"]
+        if "configurable_fields" in api_model_info:
+            data["configurable_fields"] = api_model_info["configurable_fields"]
+        if "input_token_cost" in api_model_info:
+            data["input_token_cost"] = api_model_info["input_token_cost"]
+        if "output_token_cost" in api_model_info:
+            data["output_token_cost"] = api_model_info["output_token_cost"]
+        if "max_tokens" in api_model_info:
+            data["max_tokens"] = api_model_info["max_tokens"]
+        if "max_context_length" in api_model_info:
+            data["max_context_length"] = api_model_info["max_context_length"]
+        if "currency" in api_model_info:
+            data["currency"] = api_model_info["currency"]
+        obj = OutputAPIModelInfo.load_from_db(data)
+        data = conn.fetchrow(
+            "UPDATE api_model_info SET model_name = $1, provider = $2, configurable_fields = $3, input_token_cost = $4, output_token_cost = $5, max_tokens = $6, max_context_length = $7, currency = $8 WHERE id = $9 RETURNING *;",
+            obj.model_name,
+            obj.provider,
+            obj.configurable_fields,
+            obj.input_token_cost,
+            obj.output_token_cost,
+            obj.max_tokens,
+            obj.max_context_length,
+            obj.currency,
+            obj.id,
+        )
+        return OutputAPIModelInfo.load_from_db(data)
+
+
 async def list_api_models(config: dict) -> list[OutputAPIModelInfo]:
     account_id = config["configurable"]["user_info"]["id"]
     async with get_connection_pool().acquire() as conn:
-        data = conn.fetch("SELECT * FROM api_model_info WHERE account_id = $1;", account_id)
+        data = conn.fetch(
+            "SELECT * FROM api_model_info WHERE account_id = $1;", account_id
+        )
         return [OutputAPIModelInfo.load_from_db(row) for row in data]
+
+
+async def list_api_models_admin(config: dict) -> list[OutputAPIModelInfo]:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetch("SELECT * FROM api_model_info WHERE account_id = NULL;")
+        return [OutputAPIModelInfo.load_from_db(row) for row in data]
+
 
 async def delete_api_model(config: dict, model_id: UUID) -> None:
     account_id = config["configurable"]["user_info"]["id"]
@@ -441,6 +809,20 @@ async def delete_api_model(config: dict, model_id: UUID) -> None:
             "DELETE FROM api_model_info WHERE id = $1 AND account_id = $2 RETURNING *;",
             model_id,
             account_id,
+        )
+        if not data:
+            raise ValueError("Invalid model id")
+
+
+async def delete_api_model_admin(config: dict, model_id: UUID) -> None:
+    roles = config["configurable"]["user_info"]["admin_roles"]
+    can_use = AdminRole.ADMIN_DASHBORAD in roles
+    if not can_use:
+        raise ValueError("You must be at least Admin!")
+    async with get_connection_pool().acquire() as conn:
+        data = conn.fetchrow(
+            "DELETE FROM api_model_info WHERE id = $1 AND account_id = NULL RETURNING *;",
+            model_id,
         )
         if not data:
             raise ValueError("Invalid model id")

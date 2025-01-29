@@ -31,6 +31,24 @@ from app.ai_conversation.api.service import (
     patch_api_model,
     patch_api_setup,
     patch_provider_setting,
+    create_api_model_admin,
+    create_api_setup_admin,
+    create_api_setup_allowed_model_admin,
+    create_api_setup_provider_setting_admin,
+    create_provider_setting_admin,
+    delete_api_model_admin,
+    delete_api_setup_admin,
+    delete_api_setup_allowed_model_admin,
+    delete_api_setup_provider_setting_admin,
+    delete_provider_setting_admin,
+    list_api_models_admin,
+    list_api_setup_allowed_models_admin,
+    list_api_setup_provider_settings_admin,
+    list_api_setups_admin,
+    list_provider_settings_admin,
+    patch_api_model_admin,
+    patch_api_setup_admin,
+    patch_provider_setting_admin,
 )
 from app.routes.utils import REST_DATA
 from app.security.oauth2 import DEPENDENCIES, per_req_config_modifier
@@ -311,5 +329,295 @@ async def delete_model(
         config = {"configurable": {}}
         await per_req_config_modifier(config, request)
         return await delete_api_model(config, modelId)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/admin/provider-setting",
+    dependencies=DEPENDENCIES,
+    tags=["Provider Setting (Admin)"],
+)
+async def create_setting_admin(
+    request: Request,
+    provider_setting: InputProviderSetting = Body(..., embed=True),
+) -> OutputProviderSetting:
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await create_provider_setting_admin(config, provider_setting)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/admin/provider-setting",
+    dependencies=DEPENDENCIES,
+    tags=["Provider Setting (Admin)"],
+)
+async def list_settings_admin(request: Request) -> list[OutputProviderSetting]:
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await list_provider_settings_admin(config)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch(
+    "/admin/provider-setting/{providerId}",
+    dependencies=DEPENDENCIES,
+    tags=["Provider Setting (Admin)"],
+)
+async def update_setting_admin(
+    request: Request,
+    providerId: UUID,
+    provider_setting: dict = Body(..., embed=True),
+) -> OutputProviderSetting:
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await patch_provider_setting_admin(config, providerId, provider_setting)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/admin/provider-setting/{providerId}",
+    dependencies=DEPENDENCIES,
+    tags=["Provider Setting (Admin)"],
+)
+async def delete_setting_admin(
+    request: Request,
+    providerId: UUID,
+):
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await delete_provider_setting_admin(config, providerId)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/setup", dependencies=DEPENDENCIES, tags=["API Setup (Admin)"])
+async def create_setup_admin(
+    request: Request,
+    setup: InputAPISetup = Body(..., embed=True),
+) -> OutputAPISetup:
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await create_api_setup_admin(config, setup)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/setup", dependencies=DEPENDENCIES, tags=["API Setup (Admin)"])
+async def list_setups_admin(request: Request) -> list[OutputAPISetup]:
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await list_api_setups_admin(config)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch(
+    "/admin/setup/{setupId}", dependencies=DEPENDENCIES, tags=["API Setup (Admin)"]
+)
+async def update_setup_admin(
+    request: Request,
+    setupId: UUID,
+    setup: dict = Body(..., embed=True),
+) -> OutputAPISetup:
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await patch_api_setup_admin(config, setupId, setup)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/admin/setup/{setupId}", dependencies=DEPENDENCIES, tags=["API Setup (Admin)"]
+)
+async def delete_setup_admin(
+    request: Request,
+    setupId: UUID,
+):
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await delete_api_setup_admin(config, setupId)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/admin/setup/{setupId}/provider-setting/{providerId}",
+    dependencies=DEPENDENCIES,
+    tags=["API Setup - Provider Setting (Admin)"],
+)
+async def create_setup_provider_admin(
+    request: Request,
+    setupId: UUID,
+    providerId: UUID,
+):
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await create_api_setup_provider_setting_admin(
+            config,
+            InputApiSetupProviderSetting(
+                api_setup_id=setupId, api_provider_setting_id=providerId
+            ),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/admin/setup/{setupId}/provider-setting/{providerId}",
+    dependencies=DEPENDENCIES,
+    tags=["API Setup - Provider Setting (Admin)"],
+)
+async def delete_setup_provider_admin(
+    request: Request,
+    setupId: UUID,
+    providerId: UUID,
+):
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await delete_api_setup_provider_setting_admin(
+            config, setupId, providerId
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/admin/setup/{setupId}/provider-setting",
+    dependencies=DEPENDENCIES,
+    tags=["API Setup - Provider Setting (Admin)"],
+)
+async def list_setup_providers_admin(
+    request: Request,
+    setupId: UUID,
+):
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await list_api_setup_provider_settings_admin(config, setupId)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/admin/setup/{setupId}/allowed-model/{modelId}",
+    dependencies=DEPENDENCIES,
+    tags=["API Setup - Allowed Model (Admin)"],
+)
+async def create_setup_model_admin(
+    request: Request,
+    setupId: UUID,
+    modelId: UUID,
+):
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await create_api_setup_allowed_model_admin(
+            config,
+            InputApiSetupAllowedModel(api_setup_id=setupId, api_model_info_id=modelId),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/admin/setup/{setupId}/allowed-model/{modelId}",
+    dependencies=DEPENDENCIES,
+    tags=["API Setup - Allowed Model (Admin)"],
+)
+async def delete_setup_model_admin(
+    request: Request,
+    setupId: UUID,
+    modelId: UUID,
+):
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await delete_api_setup_allowed_model_admin(config, setupId, modelId)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/admin/setup/{setupId}/allowed-model",
+    dependencies=DEPENDENCIES,
+    tags=["API Setup - Allowed Model (Admin)"],
+)
+async def list_setup_models_admin(
+    request: Request,
+    setupId: UUID,
+):
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await list_api_setup_allowed_models_admin(config, setupId)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/model", dependencies=DEPENDENCIES, tags=["Model info (Admin)"])
+async def create_model_admin(
+    request: Request,
+    model: InputAPIModelInfo = Body(..., embed=True),
+) -> OutputAPIModelInfo:
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await create_api_model_admin(config, model)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/model", dependencies=DEPENDENCIES, tags=["Model info (Admin)"])
+async def list_models_admin(request: Request) -> list[OutputAPIModelInfo]:
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await list_api_models_admin(config)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch(
+    "/admin/model/{modelId}", dependencies=DEPENDENCIES, tags=["Model info (Admin)"]
+)
+async def update_model_admin(
+    request: Request,
+    modelId: UUID,
+    model: dict = Body(..., embed=True),
+) -> OutputAPIModelInfo:
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await patch_api_model_admin(config, modelId, model)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/admin/model/{modelId}", dependencies=DEPENDENCIES, tags=["Model info (Admin)"]
+)
+async def delete_model_admin(
+    request: Request,
+    modelId: UUID,
+):
+    try:
+        config = {"configurable": {}}
+        await per_req_config_modifier(config, request)
+        return await delete_api_model_admin(config, modelId)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

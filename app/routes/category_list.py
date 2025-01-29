@@ -15,6 +15,7 @@ class CategoryList(BaseModel):
 llm_lingua = PromptCompressor(
     model_name="microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank",
     use_llmlingua2=True,
+    device_map="cpu",
 )
 
 
@@ -24,7 +25,8 @@ prompt = """You are an AI assistant tasked with analyzing a summarized text and 
 2. **Non-Contradictory:** Do not overlap in a way that creates logical conflicts.  
 3. **Relevant:** Directly related to the main ideas presented in the text.  
 
-Provide the categories as a clear, concise list without additional explanation unless requested."""
+Provide the categories as a clear, concise list without additional explanation unless requested.
+Generate the categories in the language of the summarized text."""
 
 
 def prepare(data):
@@ -38,6 +40,7 @@ async def extract_keywords(chat_model, texts):
     compressed = llm_lingua.compress_prompt(
         prepare(texts), target_token=10_000, force_tokens=["?", "!", "."]
     )
-    return await chat_model.with_structured_output(CategoryList).ainvoke(
+    chat_model = chat_model.with_structured_output(CategoryList)
+    return await chat_model.ainvoke(
         [SystemMessage(prompt), HumanMessage(compressed["compressed_prompt"])]
     )

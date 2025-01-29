@@ -17,6 +17,8 @@ SECRET_KEY = base64.b64decode(SECRET_KEY)
 
 # temporary
 API_KEY = os.getenv("OPENAI_API_KEY")
+if not API_KEY:
+    exit("OPENAI_API_KEY is currently required")
 
 
 async def verify_room_id(

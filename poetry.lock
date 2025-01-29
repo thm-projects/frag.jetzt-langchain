@@ -1149,6 +1149,22 @@ wrapt = ">=1.10,<2"
 dev = ["PyTest", "PyTest-Cov", "bump2version (<1)", "sphinx (<2)", "tox"]
 
 [[package]]
+name = "detoxify"
+version = "0.5.2"
+description = "A python library for detecting toxic comments"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "detoxify-0.5.2-py3-none-any.whl", hash = "sha256:e6135a2d85ad17bfb19d8cf53756a1b499e6d9c03cb1976ddefdc013bf29d32a"},
+    {file = "detoxify-0.5.2.tar.gz", hash = "sha256:c119d0b47545bb076190ff583faad9aa3bb0a90ac01c7c4144758606d21da5b1"},
+]
+
+[package.dependencies]
+sentencepiece = ">=0.1.94"
+torch = ">=1.7.0"
+transformers = "*"
+
+[[package]]
 name = "distro"
 version = "1.9.0"
 description = "Distro - an OS platform information API"
@@ -7897,4 +7913,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = "=3.11.10"
-content-hash = "e3a75633518a8326fed36dccaee5640623273c37599ac10a78be1086f044c481"
+content-hash = "192d134e1f1d7fc5e7d334dbe8aa3b5b7a38705b3911ef7fa08598a31526b96c"

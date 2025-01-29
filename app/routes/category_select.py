@@ -1,7 +1,12 @@
 from typing import Optional
+from fastapi import APIRouter, Body, Request
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 from langchain_core.prompts import SystemMessagePromptTemplate
+
+from app.routes.category_list import extract_keywords, CategoryList
+from app.routes.utils import select_model
+from app.security.oauth2 import ROOM_DEPENDENCIES, per_req_config_modifier
 
 
 class CategorySelect(BaseModel):
@@ -23,6 +28,33 @@ Provide only the selected category or nothing as the output, ensuring precision 
 
 
 async def run_category_select(model, categories: list[str], text: str):
-    return await model.with_structured_output(CategorySelect).ainvoke(
+    model = model.with_structured_output(CategorySelect)
+    return await model.ainvoke(
         [prompt.format(categories="\n".join(categories)), HumanMessage(text)]
     )
+
+
+router = APIRouter()
+
+
+@router.post("/apply", dependencies=ROOM_DEPENDENCIES, tags=["Category List"])
+async def apply_category(
+    request: Request,
+    categories: list[str] = Body(..., embed=True),
+    text: str = Body(..., embed=True),
+) -> CategorySelect:
+    config = {"configurable": {}}
+    await per_req_config_modifier(config, request)
+    model = select_model(None, config)
+    return await run_category_select(model, categories, text)
+
+
+@router.post("/extract", dependencies=ROOM_DEPENDENCIES, tags=["Category List"])
+async def extract_categories(
+    request: Request,
+    texts: list[str] = Body(..., embed=True),
+) -> CategoryList:
+    config = {"configurable": {}}
+    await per_req_config_modifier(config, request)
+    model = select_model(None, config)
+    return await extract_keywords(model, texts)

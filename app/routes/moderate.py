@@ -1,4 +1,6 @@
-from train.celadon.model import MultiHeadDebertaForSequenceClassification
+from fastapi import APIRouter, Body, Request
+from app.security.oauth2 import ROOM_DEPENDENCIES, per_req_config_modifier
+from app.celadon.model import MultiHeadDebertaForSequenceClassification
 from transformers import AutoTokenizer
 from detoxify import Detoxify
 from openai import OpenAI
@@ -50,7 +52,9 @@ def combine_sentiments(sentiments):
             if negative_sentiments is None:
                 negative_sentiments = s
             else:
-                negative_sentiments = [negative_sentiments[i] + s[i] for i in range(vec_len)]
+                negative_sentiments = [
+                    negative_sentiments[i] + s[i] for i in range(vec_len)
+                ]
             break
         if not had_negative:
             rest_sentiments.append(s)
@@ -183,3 +187,24 @@ def run_moderate(text_list, api_key):
     result["sentiment"] = sentiments
 
     return result
+
+
+def expand_to_list(data: dict) -> list[dict]:
+    length = len(data["detoxify"])
+    return [{k: v[i] for k, v in data.items()} for i in range(length)]
+
+
+router = APIRouter()
+
+
+@router.post("/", dependencies=ROOM_DEPENDENCIES, tags=["Moderate Texts"])
+async def moderate_texts(
+    request: Request,
+    texts: list[str] = Body(..., embed=True),
+    allow_openai: bool = False,
+) -> list[dict]:
+    config = {"configurable": {}}
+    await per_req_config_modifier(config, request)
+    # TODO: Find correct key
+    api_key = config["configurable"]["api_obj"]["api_key"]
+    return expand_to_list(run_moderate(texts, api_key if allow_openai else None))

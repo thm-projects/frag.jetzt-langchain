@@ -4,9 +4,12 @@ from fastapi.responses import RedirectResponse
 from langserve import add_routes
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from app.security.oauth2 import DEPENDENCIES, per_req_config_modifier
+from app.security.oauth2 import ROOM_DEPENDENCIES, per_req_config_modifier
 from app.routes.keywords import chain as keyword_chain
 from app.routes.improve import chain as improve_chain
+from app.routes.embed import router as embed_router
+from app.routes.moderate import router as moderate_router
+from app.routes.category_select import router as category_router
 from app.ai_conversation.file_handling.router import router as file_router
 from app.ai_conversation.ai_conversation import shutdown, init
 from app.ai_conversation.threads.router import router as thread_router
@@ -49,6 +52,9 @@ app.include_router(api_router, prefix="/api")
 app.include_router(assistant_router, prefix="")
 app.include_router(restriction_router, prefix="/restriction")
 app.include_router(room_setting_router, prefix="/room-setting")
+app.include_router(embed_router, prefix="/similarity")
+app.include_router(moderate_router, prefix="/moderate")
+app.include_router(category_router, prefix="/category")
 
 # Edit this to add the chain you want to add
 add_routes(
@@ -63,7 +69,7 @@ add_routes(
         "input_schema",
         "output_schema",
     ],
-    dependencies=DEPENDENCIES,
+    dependencies=ROOM_DEPENDENCIES,
     per_req_config_modifier=per_req_config_modifier,
 )
 
@@ -79,7 +85,7 @@ add_routes(
         "input_schema",
         "output_schema",
     ],
-    dependencies=DEPENDENCIES,
+    dependencies=ROOM_DEPENDENCIES,
     per_req_config_modifier=per_req_config_modifier,
 )
 

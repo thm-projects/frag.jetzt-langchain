@@ -1,2 +1,3 @@
 #!/bin/bash
-sudo docker build -t fragjetzt-langchain-langchain .
+SECRET_KEY="ThisIsSecretForJWTHS512SignatureAlgorithmThatMUSTHave64ByteLengt"
+sudo docker build --build-arg "SECRET_KEY=$SECRET_KEY" -t fragjetzt-langchain-langchain .

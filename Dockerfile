@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11.10-slim
 
 RUN apt update && apt install -y libmagic-dev && pip install poetry==1.6.1
 
@@ -13,6 +13,9 @@ COPY ./package[s] ./packages
 RUN poetry install --no-interaction --no-ansi --no-root && pip install pyarrow==18.0.0
 
 COPY ./app ./app
+
+ARG SECRET_KEY
+ENV SECRET_KEY=$SECRET_KEY
 
 RUN poetry run python -m app.cache
 

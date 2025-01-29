@@ -49,6 +49,7 @@ torch = {version = "^2.5.1+cpu", source = "pytorch"}
 torchvision = {version = "^0.20.1+cpu", source = "pytorch"}
 torchaudio = {version = "^2.5.1+cpu", source = "pytorch"}
 llmlingua = "^0.2.2"
+detoxify = "^0.5.2"
 
 [[tool.poetry.source]]
 name = "pytorch"
