@@ -68,8 +68,8 @@ def combine_sentiments(sentiments):
 
 
 def normalize(vec):
-    total = sum(map(lambda x: x * x, vec)) ** 0.5
-    if total == 0:
+    total = sum(vec)
+    if abs(total) < 1e-10:
         return vec
     return [i / total for i in vec]
 
