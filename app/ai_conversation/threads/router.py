@@ -30,6 +30,13 @@ async def list_chats(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/{thread_id}", dependencies=ROOM_DEPENDENCIES, tags=["Thread"])
+async def delete_thread(request: Request, thread_id: UUID):
+    config = {"configurable": {}}
+    await per_req_config_modifier(config, request)
+    return await get_graph_wrapper().delete_chat(config, thread_id)
+
+
 @router.post("/new", dependencies=ROOM_DEPENDENCIES, tags=["Thread"])
 async def create_new_chat(
     request: Request, message: HumanMessage = Body(...), assistant_id: UUID = Body(...)

@@ -15,13 +15,21 @@ from langchain_core.prompts import (
 )
 from langgraph.graph import START, END, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from app.ai_conversation.ai_conversation import get_postgres_checkpointer
+from app.ai_conversation.ai_conversation import (
+    get_connection_pool,
+    get_postgres_checkpointer,
+)
 from app.ai_conversation.assistants.models import WrappedAssistant
 from app.ai_conversation.assistants.service import get_generic_assistant
 from app.ai_conversation.entities.thread import Thread
 from app.ai_conversation.file_handling.vectorstore import get_chroma
 from langchain_core.runnables import RunnableConfig
-from app.ai_conversation.threads.service import create_thread, list_threads, get_thread
+from app.ai_conversation.threads.service import (
+    create_thread,
+    delete_thread,
+    list_threads,
+    get_thread,
+)
 from app.routes.utils import select_model
 from langserve.serialization import WellKnownLCSerializer
 from app.ai_conversation.threads.chat_namer import chain as chat_namer_chain
@@ -29,12 +37,20 @@ import json
 import datetime
 
 rag_template = SystemMessagePromptTemplate.from_template(
-    """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question.
-       Add citations in the form of †[document_id, metadata_as_json]† at the end of a paragraph, inside the text or at the end of the answer when you use information from a document.
-       When you use more than one document, add the citations in the order you use them.
-       If you don't know the answer, just say that you don't know. Keep the answer concise and always answer in the language of the user.
+    """You are an assistant for question-answering tasks. Use the following pieces of retrieved context and the role below to answer the question.
+Always add citations whenever possible in the form of †[document_id]† at the end of a paragraph, inside the text, or at the end of the answer.
+When you use information from multiple documents, cite them in the order they appear, like this: †[document_id_1]† †[document_id_2]†.
+Even when the answer is based on general knowledge or reasoning, include citations from relevant documents whenever applicable.
+If you don't know the answer, just say that you don't know. Keep the answer concise and always respond in the user's language.
 
-       Context: {context}"""
+Context: {context}
+
+------
+
+Role: {role}
+
+------
+**Cite all references you use!**"""
 )
 
 prompt = ChatPromptTemplate.from_messages(
@@ -50,11 +66,7 @@ GraphState = MessagesState
 
 
 def format_docs(docs: List[Document]):
-    unwanted_keys = ["ref_id", "id"]
-    return "\n\n".join(
-        f"†[{doc.metadata['id']}, { {x: doc.metadata[x] for x in doc.metadata if x not in unwanted_keys} }]†:\n{doc.page_content}"
-        for doc in docs
-    )
+    return "\n\n".join(f"†[{doc.metadata['id']}]†:\n{doc.page_content}" for doc in docs)
 
 
 def _message_to_str(message: HumanMessage):
@@ -80,6 +92,22 @@ def _make_content_ids(state: GraphState, config: RunnableConfig):
     return list(ids)
 
 
+async def _apply_file_names(documents: list[Document], account_id: UUID):
+    async with get_connection_pool().acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT content_id, name
+               FROM uploaded_file
+               WHERE account_id = $1 AND content_id IN (SELECT unnest($2::uuid[]));""",
+            account_id,
+            list(set(d.metadata["ref_id"] for d in documents)),
+        )
+
+    for row in rows:
+        content_id = str(row["content_id"])
+        for e in filter(lambda x: x.metadata["ref_id"] == content_id, documents):
+            e.metadata["name"] = row["name"]
+
+
 async def _rag_for_last_message(state: GraphState, config: RunnableConfig):
     messages = state["messages"]
     input = messages[-1]
@@ -99,6 +127,8 @@ async def _rag_for_last_message(state: GraphState, config: RunnableConfig):
     )
     if len(documents) < 1:
         return {"messages": []}
+    # add names as metadata
+    await _apply_file_names(documents, config["configurable"]["user_info"]["id"])
     message = ToolMessage(
         content="", artifact={"documents": documents}, tool_call_id="rag"
     )
@@ -108,7 +138,7 @@ async def _rag_for_last_message(state: GraphState, config: RunnableConfig):
 def _filter_messages(messages: list[BaseMessage]):
     return list(
         filter(
-            lambda x: not isinstance(x, ToolMessage) or x.tool_call_id not in ["rag"],
+            lambda x: not x.type == "tool" or x.tool_call_id not in ["rag"],
             messages,
         )
     )
@@ -119,14 +149,16 @@ async def _make_answer(state: GraphState, config: RunnableConfig):
     messages = state["messages"]
     input = messages[-1]
     end = -1
-    system_messages = []
+    system_message = None
     if input.type == "tool":
-        system_messages.append(
-            rag_template.format(context=format_docs(input.artifact["documents"]))
+        system_message = rag_template.format(
+            context=format_docs(input.artifact["documents"]),
+            role=assistant.assistant.instruction,
         )
         input = messages[-2]
         end = -2
-    system_messages.append(SystemMessage(content=assistant.assistant.instruction))
+    else:
+        system_message = SystemMessage(content=assistant.assistant.instruction)
     conversation = _filter_messages(messages[:end])
     llm = select_model(None, config)
     chain = prompt | llm
@@ -134,7 +166,7 @@ async def _make_answer(state: GraphState, config: RunnableConfig):
         {
             "question": [input],
             "conversation": conversation,
-            "system_messages": system_messages,
+            "system_messages": [system_message],
         }
     )
     return {"messages": [response]}
@@ -170,6 +202,12 @@ class GraphWrapper:
         room_id = configurable["room"]["id"]
         user_id = configurable["user_info"]["id"]
         return await list_threads(room_id, user_id)
+
+    async def delete_chat(self, config: RunnableConfig, thread_id: UUID) -> None:
+        configurable = config["configurable"]
+        room_id = configurable["room"]["id"]
+        user_id = configurable["user_info"]["id"]
+        await delete_thread(thread_id, room_id, user_id)
 
     async def new_chat(
         self, config: RunnableConfig, input: HumanMessage, assistant_id: UUID

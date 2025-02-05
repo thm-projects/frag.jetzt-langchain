@@ -11,6 +11,7 @@ else
   # compose project
   SECRET_KEY="$(cat $DIR/environments/backend.env | grep SPRING_JWT_SECRET | cut -d '=' -f 2)"
 fi
+OPENAI_API_KEY="$(cat .key)"
 ORIGINS="http://localhost:4200"
 sudo docker run --rm -it \
   -e SECRET_KEY="$SECRET_KEY" -e OPENAI_API_KEY="$OPENAI_API_KEY" -e ORIGINS="$ORIGINS" -e ROOT_PATH="/ai" \
