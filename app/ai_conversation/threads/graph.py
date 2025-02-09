@@ -81,15 +81,29 @@ def _message_to_str(message: HumanMessage):
     return text
 
 
-def _make_content_ids(state: GraphState, config: RunnableConfig):
+async def _make_content_filter(state: GraphState, config: RunnableConfig):
     assistant: WrappedAssistant = config["configurable"]["assistant"]
-    ids = set([f.content_id for _, f in assistant.files])
+    ids = set([str(f.content_id) for _, f in assistant.files])
     messages: list[BaseMessage] = state["messages"]
     message_ids = set(
         [e for m in messages for e in m.additional_kwargs.get("attachments", [])]
     )
-    ids.update(message_ids)
-    return list(ids)
+    # files to content ids
+    async with get_connection_pool().acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT content_id
+               FROM uploaded_file
+               WHERE account_id = $1 AND id IN (SELECT unnest($2::uuid[]));""",
+            config["configurable"]["user_info"]["id"],
+            list(message_ids),
+        )
+    for row in rows:
+        ids.add(str(row["content_id"]))
+    if len(ids) < 1:
+        return None
+    return {
+        "ref_id": {"$in": list(ids)},
+    }
 
 
 async def _apply_file_names(documents: list[Document], account_id: UUID):
@@ -113,18 +127,22 @@ async def _rag_for_last_message(state: GraphState, config: RunnableConfig):
     input = messages[-1]
     if input.type != "human":
         raise ValueError("Last message must be human")
-    documents = (
-        await get_chroma()
-        .as_retriever(
-            search_type="similarity_score_threshold",
-            search_kwargs={
-                "score_threshold": 0.4,
-                "k": 7,
-            },
-            filter={"ref_id": {"$in": _make_content_ids(state, config)}},
+    content_filter = await _make_content_filter(state, config)
+    if content_filter:
+        documents = (
+            await get_chroma()
+            .as_retriever(
+                search_type="similarity_score_threshold",
+                search_kwargs={
+                    "score_threshold": 0.4,
+                    "k": 7,
+                    "filter": content_filter,
+                },
+            )
+            .ainvoke(_message_to_str(input))
         )
-        .ainvoke(_message_to_str(input))
-    )
+    else:
+        documents = []
     if len(documents) < 1:
         return {"messages": []}
     # add names as metadata

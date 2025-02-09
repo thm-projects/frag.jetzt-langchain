@@ -94,12 +94,9 @@ async def update_setting(
     providerId: UUID,
     provider_setting: dict = Body(..., embed=True),
 ) -> OutputProviderSetting:
-    try:
-        config = {"configurable": {}}
-        await per_req_config_modifier(config, request)
-        return await patch_provider_setting(config, providerId, provider_setting)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    config = {"configurable": {}}
+    await per_req_config_modifier(config, request)
+    return await patch_provider_setting(config, provider_setting, providerId)
 
 
 @router.delete(
@@ -377,7 +374,7 @@ async def update_setting_admin(
     try:
         config = {"configurable": {}}
         await per_req_config_modifier(config, request)
-        return await patch_provider_setting_admin(config, providerId, provider_setting)
+        return await patch_provider_setting_admin(config, provider_setting, providerId)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

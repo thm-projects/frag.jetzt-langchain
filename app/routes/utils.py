@@ -15,6 +15,8 @@ from langchain_groq import ChatGroq
 from langchain_aws import ChatBedrock, ChatBedrockConverse
 from langchain_upstage import ChatUpstage
 from langchain_community.chat_models import ChatSnowflakeCortex
+from langchain_ollama import ChatOllama
+import os
 
 DEFAULT_VALUES = {}
 MANDATORY_FIELDS = {}
@@ -22,6 +24,8 @@ REST_DATA = {}
 
 # could be added: Databricks, VertexAI, Aleph alpha (langchain provides only llms, could use ChatOpenAi with base_url="https://api.aleph-alpha.com/")
 # StabilityAI? : Replicate
+
+FRAGJETZT_OLLAMA_ENDPOINT = os.getenv("FRAGJETZT_OLLAMA_ENDPOINT")
 
 
 def _build_defaults():
@@ -356,6 +360,18 @@ def _build_defaults():
         "top_p": {"type": "float|null", "default": None},
         "max_tokens": {"type": "int|null", "default": None},
     }
+    # fragjetzt
+    if FRAGJETZT_OLLAMA_ENDPOINT:
+        MANDATORY_FIELDS["fragjetzt"] = []
+        DEFAULT_VALUES["fragjetzt"] = {
+            "model": {"type": "str|null", "default": "deepseek-r1:14b"},
+            "temperature": {"type": "float|null", "default": None},
+            "repeat_penalty": {"type": "float|null", "default": None},
+            "seed": {"type": "int|null", "default": None},
+            "top_k": {"type": "int|null", "default": None},
+            "top_p": {"type": "float|null", "default": None},
+            "max_tokens": {"type": "int|null", "default": None},
+        }
     # Make rest data
     mandatory_keys = MANDATORY_FIELDS.keys()
     default_values_keys = DEFAULT_VALUES.keys()
@@ -764,6 +780,29 @@ def select_model(_, config):
                 temperature=get_optional("temperature", api_obj, default_obj),
                 top_p=get_optional("top_p", api_obj, default_obj),
                 max_tokens=get_optional("max_tokens", api_obj, default_obj, None),
+            )
+        case "fragjetzt":
+            if not FRAGJETZT_OLLAMA_ENDPOINT:
+                raise HTTPException(
+                    status_code=status.HTTP_410_GONE,
+                    detail="FragJetzt Ollama endpoint is not available.",
+                )
+            # https://python.langchain.com/docs/integrations/chat/ollama/
+            default_obj = DEFAULT_VALUES["fragjetzt"]
+            num_ctx = min(
+                8192, max(100, get_optional("max_tokens", api_obj, default_obj, 8192))
+            )
+            return ChatOllama(
+                model="deepseek-r1:14b",
+                num_ctx=num_ctx,
+                endpoint=FRAGJETZT_OLLAMA_ENDPOINT,
+                keep_alive="24h",
+                # optional
+                temperature=get_optional("temperature", api_obj, default_obj),
+                repeat_penalty=get_optional("repeat_penalty", api_obj, default_obj),
+                seed=get_optional("seed", api_obj, default_obj),
+                top_k=get_optional("top_k", api_obj, default_obj),
+                top_p=get_optional("top_p", api_obj, default_obj),
             )
         case _:
             raise HTTPException(

@@ -26,9 +26,55 @@ sentiment_pipeline_2 = pipeline(
 )
 
 
-def run_simple_sentiment(text_list, pipeline):
-    results = pipeline(text_list)
+def split_text_by_tokens(tokenizer, text, max_length):
+    tokens = tokenizer.tokenize(text)
+    chunks = []
+
+    for i in range(0, len(tokens), max_length):
+        chunk = tokens[i : i + max_length]
+        chunks.append(tokenizer.convert_tokens_to_string(chunk))
+
+    return chunks
+
+
+def run_simple_sentiment(text_list, pipeline, max_size):
+    tokens = []
+    offsets = []
+    for text in text_list:
+        tokens.extend(
+            split_text_by_tokens(pipeline.tokenizer, text, max_size - 2)
+        )  # -2 for BOS and EOS
+        offsets.append(len(tokens))
+    results = pipeline(tokens)
     sentiments = []
+    old_results = results
+    results = []
+    current_val = None
+    k = 0
+    for i, result in enumerate(old_results):
+        if i == offsets[k]:
+            length = sum(map(lambda x: x["score"], current_val))
+            results.append(
+                [
+                    {"score": r["score"] / length, "label": r["label"]}
+                    for r in current_val
+                ]
+            )
+            current_val = None
+            k += 1
+        if current_val is None:
+            current_val = result
+        current_val = [
+            {"score": r["score"] + r2["score"], "label": r["label"]}
+            for r, r2 in zip(result, current_val)
+        ]
+    length = sum(map(lambda x: x["score"], current_val))
+    results.append(
+        [
+            {"score": r["score"] / length, "label": r["label"]}
+            for r in current_val
+        ]
+    )
     for result in results:
         pos = next((r["score"] for r in result if r["label"] == "positive"), None)
         neutral = next((r["score"] for r in result if r["label"] == "neutral"), None)
@@ -180,8 +226,8 @@ def run_moderate(text_list, api_key):
 
     sentiments = []
     for texts in chunked(text_list, 16):
-        sentiment1 = run_simple_sentiment(texts, sentiment_pipeline)
-        sentiment2 = run_simple_sentiment(texts, sentiment_pipeline_2)
+        sentiment1 = run_simple_sentiment(texts, sentiment_pipeline, 512)
+        sentiment2 = run_simple_sentiment(texts, sentiment_pipeline_2, 512)
         for sentis in zip(sentiment1, sentiment2):
             sentiments.append(combine_sentiments(sentis))
     result["sentiment"] = sentiments

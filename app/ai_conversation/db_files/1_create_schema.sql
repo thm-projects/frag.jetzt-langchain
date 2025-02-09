@@ -359,9 +359,12 @@ CREATE TABLE thread (
 -- DATA
 
 INSERT INTO api_model_info(model_name, provider, configurable_fields, input_token_cost, output_token_cost, max_tokens, max_context_length, currency)
-VALUES ('gpt-4o', 'openai', '["openai_organization","temperature","frequency_penalty","presence_penalty","top_p"]', 2.5e-6, 10e-6, 16384, 128000, 'USD'),
+VALUES ('deepseek-r1:14b', 'fragjetzt', '["temperature","repeat_penalty","seed","top_k","top_p"]', 0, 0, NULL, 8192, 'USD'),
+       ('gpt-4o', 'openai', '["openai_organization","temperature","frequency_penalty","presence_penalty","top_p"]', 2.5e-6, 10e-6, 16384, 128000, 'USD'),
        ('gpt-4o-2024-11-20', 'openai', '["openai_organization","temperature","frequency_penalty","presence_penalty","top_p"]', 2.5e-6, 10e-6, 16384, 128000, 'USD'),
        ('gpt-4o-mini', 'openai', '["openai_organization","temperature","frequency_penalty","presence_penalty","top_p"]', 0.15e-6, 0.6e-6, 16384, 128000, 'USD'),
+       ('chatgpt-4o-latest', 'openai', '["openai_organization","temperature","frequency_penalty","presence_penalty","top_p"]', 5e-6, 15e-6, 16384, 128000, 'USD'),
+       ('o3-mini', 'openai', '["openai_organization","temperature","frequency_penalty","presence_penalty","top_p"]', 1.1e-6, 4.4e-6, 100000, 200000, 'USD'),
        ('claude-3-5-sonnet-20241022', 'anthropic', '["temperature","top_k","top_p","max_tokens"]', 3e-6, 15e-6, 8192, 200000, 'USD'),
        ('claude-3-5-haiku-20241022', 'anthropic', '["temperature","top_k","top_p","max_tokens"]', 1e-6, 5e-6, 8192, 200000, 'USD'),
        ('mistral-large-latest', 'mistral', '["temperature","top_p"]', 2e-6, 6e-6, NULL, 128000, 'USD'),
