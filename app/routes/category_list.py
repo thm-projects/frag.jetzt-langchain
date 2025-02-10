@@ -26,7 +26,8 @@ prompt = """You are an AI assistant tasked with analyzing a summarized text and 
 3. **Relevant:** Directly related to the main ideas presented in the text.  
 
 Provide the categories as a clear, concise list without additional explanation unless requested.
-Generate the categories in the language of the summarized text."""
+Generate the categories in the language of the summarized text.
+If possible, always output a lemmatized version of the category, not the original."""
 
 
 def prepare(data):

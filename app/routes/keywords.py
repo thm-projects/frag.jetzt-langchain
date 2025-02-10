@@ -40,6 +40,8 @@ Example output:
   "named_entities": ["Bob"],
   "special_numbers": ["1 meter", "Year 1991", "July 5th, 1991"]
 }}
+
+If possible, always output a lemmatized version of the words, not the original.
 """.strip(),
         ),
         ("human", "{text}"),
