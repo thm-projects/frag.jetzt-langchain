@@ -5,5 +5,4 @@ __pycache__
 /test
 /train/distilbert-token-swearword
 /train/celadon
-/app/celadon
 /.key

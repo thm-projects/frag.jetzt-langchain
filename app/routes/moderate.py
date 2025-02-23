@@ -1,15 +1,9 @@
 from fastapi import APIRouter, Body, Request
 from app.security.oauth2 import ROOM_DEPENDENCIES, per_req_config_modifier
-from app.celadon.model import MultiHeadDebertaForSequenceClassification
-from transformers import AutoTokenizer
 from detoxify import Detoxify
 from openai import OpenAI
 from more_itertools import chunked
 from transformers import pipeline
-
-celadon_tokenizer = AutoTokenizer.from_pretrained("PleIAs/celadon")
-celadon = MultiHeadDebertaForSequenceClassification.from_pretrained("PleIAs/celadon")
-celadon.eval()
 
 detox = Detoxify("multilingual")
 
@@ -169,42 +163,6 @@ def run_detox(text_list):
     return [{k: v[i] for (k, v) in result_dict.items()} for i in range(length)]
 
 
-def run_celadon(text_list):
-    LABEL_MAX = 3
-    inputs = celadon_tokenizer(
-        text_list, return_tensors="pt", padding=True, truncation=True
-    )
-    outputs = celadon(
-        input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"]
-    )
-
-    predictions = outputs.argmax(dim=-1).squeeze()
-    iterations = predictions.size()[0]
-    if len(predictions.size()) == 1:
-        iterations = 1
-        predictions = [predictions]
-
-    result = [
-        {
-            "Race/Origin": predictions[i][0].item() / LABEL_MAX,
-            "Gender/Sex": predictions[i][1].item() / LABEL_MAX,
-            "Religion": predictions[i][2].item() / LABEL_MAX,
-            "Ability": predictions[i][3].item() / LABEL_MAX,
-            "Violence": predictions[i][4].item() / LABEL_MAX,
-        }
-        for i in range(iterations)
-    ]
-    for result_item in result:
-        summed_values = sum(result_item.values())
-        if summed_values > 2:
-            result_item["Flagged"] = "Toxic"
-        elif summed_values > 1 or max(result_item.values()) == 1:
-            result_item["Flagged"] = "Mild"
-        else:
-            result_item["Flagged"] = "No"
-    return result
-
-
 def run_moderate(text_list, api_key):
     result = {}
 
@@ -212,11 +170,6 @@ def run_moderate(text_list, api_key):
     for texts in chunked(text_list, 64):
         result_list.extend(run_detox(texts))
     result["detoxify"] = result_list
-
-    result_list = []
-    for texts in chunked(text_list, 2):
-        result_list.extend(run_celadon(texts))
-    result["celadon"] = result_list
 
     if api_key is not None:
         result_list = []
