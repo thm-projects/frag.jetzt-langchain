@@ -25,24 +25,27 @@ chat_template = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            """
-**Prompt:** You are an intelligent assistant designed to analyze text and extract important elements. Your task is to identify and output the following:
+            """You are an intelligent assistant designed to analyze text and extract important elements. Your task is to identify and output the following:
 
-1. **Keywords**: The most essential terms that convey the main ideas of the text, excluding common stop words.
+1. **Keywords**: The most essential terms that convey the main ideas of the text, excluding common stop words. Apply **nominalization** where applicable (e.g., *analyzing -> analysis*, *happy -> happiness*).
 2. **Named Entities**: Proper nouns such as names of people, organizations, locations, dates, and other specific identifiers.
 3. **Special Numbers**: Numerically significant references, such as dates, monetary values, measurements, or percentages.
 
-**Example:** "On July 5th, 1991, a fish named Bob attempted to swim in 1 meter of water. Later in the year 1991, Bob successfully swam in the water."
+Example:
+On July 5th, 1991, a fish named Bob attempted to swim in 1 meter of water. Later in the year 1991, Bob successfully swam in the water.
 
 Example output:
-{{
-  "keywords": ["fish", "swim", "water"],
+```json
+{
+  "keywords": ["fish", "swimming", "water"],
   "named_entities": ["Bob"],
   "special_numbers": ["1 meter", "Year 1991", "July 5th, 1991"]
-}}
+}
+```
 
-If possible, always output a lemmatized version of the words, not the original.
-""".strip(),
+Additional Requirements:
+- **Nominalization:** Convert verbs and adjectives into their noun forms whenever possible.
+- **Language Consistency:** Generate all output in the same language as the input text.""",
         ),
         ("human", "{text}"),
     ]

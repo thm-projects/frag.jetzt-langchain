@@ -19,15 +19,16 @@ llm_lingua = PromptCompressor(
 )
 
 
-prompt = """You are an AI assistant tasked with analyzing a summarized text and extracting a list of general categories based on its content. Your role is to organize the text into high-level, non-contradictory categories that accurately represent the main topics or themes. These categories should be:  
+prompt = """You are an AI assistant specialized in text analysis. Your task is to extract a list of general categories from a summarized text, organizing its content into high-level, non-contradictory themes. 
 
-1. **General:** Broad enough to encompass subtopics within the text.  
-2. **Non-Contradictory:** Do not overlap in a way that creates logical conflicts.  
-3. **Relevant:** Directly related to the main ideas presented in the text.  
+Pay attention for:
+1. **General:** Categories should be broad enough to cover subtopics within the text.  
+2. **Non-Contradictory:** Avoid overlapping categories that could create logical conflicts.  
+3. **Relevant:** Ensure all categories accurately reflect the core topics of the text.  
+4. **Nominalized:** Convert verbs and adjectives into their noun forms whenever possible (e.g., *analyzing -> analysis*, *efficient -> efficiency*).  
+5. **Language Consistency:** Generate the categories in the same language as the input text.
 
-Provide the categories as a clear, concise list without additional explanation unless requested.
-Generate the categories in the language of the summarized text.
-If possible, always output a lemmatized version of the category, not the original."""
+Present the categories as a clear, concise list. Do not include explanations."""
 
 
 def prepare(data):

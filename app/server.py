@@ -10,6 +10,7 @@ from app.routes.improve import chain as improve_chain
 from app.routes.embed import router as embed_router
 from app.routes.moderate import router as moderate_router
 from app.routes.category_select import router as category_router
+from app.routes.topic import router as topic_router
 from app.ai_conversation.file_handling.router import router as file_router
 from app.ai_conversation.ai_conversation import shutdown, init
 from app.ai_conversation.threads.router import router as thread_router
@@ -55,6 +56,7 @@ app.include_router(room_setting_router, prefix="/room-setting")
 app.include_router(embed_router, prefix="/similarity")
 app.include_router(moderate_router, prefix="/moderate")
 app.include_router(category_router, prefix="/category")
+app.include_router(topic_router, prefix="/topic")
 
 # Edit this to add the chain you want to add
 add_routes(
